@@ -1,0 +1,33 @@
+{
+  "name": "snapshot",
+  "module": "dist/cli.js",
+  "main": "dist/cli.js",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "snapshot": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "snapshot": "bun run src/cli.ts",
+    "dev": "bun run src/cli.ts",
+    "clean": "rm -rf dist",
+    "build": "bun run clean && bunx tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "gen:conflicts": "bun run scripts/generate-conflicts.ts",
+    "test": "bun test test/milestone1.test.ts test/merge-list-lock.test.ts test/merge-many-cleanup.test.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.18.0",
+    "ink": "^6.8.0",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
