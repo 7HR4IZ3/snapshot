@@ -13,6 +13,12 @@ All metadata lives in project-local `.snapshot/`.
     <review-id>.json
   merges/
     <merge-session-id>.json
+    <merge-session-id>.<workspace-id>.conflicts.json
+  overlay/
+    <workspace-id>/
+      state.json
+      upper/
+      work/
   locks/
     merge.lock
 ```
@@ -23,8 +29,17 @@ All metadata lives in project-local `.snapshot/`.
 {
   "version": 1,
   "projectPath": "/abs/path/to/repo",
+  "workspace": {
+    "backendDefault": "auto",
+    "fallbackPolicy": "best-available",
+    "include": [],
+    "exclude": [],
+    "symlink": [],
+    "symlinkMode": "shared-live"
+  },
   "merge": {
     "prefer": "virtual",
+    "autoCommit": true,
     "stopOnConflict": true,
     "allowBinaryAutoResolve": false,
     "defaultOrder": "created"
@@ -46,6 +61,7 @@ All metadata lives in project-local `.snapshot/`.
   "projectPath": "/abs/path/to/repo",
   "workspacePath": "/abs/path/to/workspace",
   "workspaceBranch": "snapshot/ws_20260228_001",
+  "backend": "apfs-cow",
   "baseCommit": "abc123...",
   "targetBranchAtSpawn": "main",
   "createdAt": "2026-02-28T10:00:00.000Z",
@@ -62,6 +78,12 @@ All metadata lives in project-local `.snapshot/`.
 - `merged`
 - `conflicted`
 - `archived`
+
+`backend` enum:
+
+- `worktree`
+- `apfs-cow`
+- `overlay`
 
 ## Review Record
 
@@ -81,7 +103,6 @@ All metadata lives in project-local `.snapshot/`.
       "decision": "approved",
       "notes": [
         {
-          "line": 88,
           "message": "Consider extracting helper later"
         }
       ]
@@ -96,7 +117,7 @@ All metadata lives in project-local `.snapshot/`.
 {
   "version": 1,
   "mergeSessionId": "mg_20260228_001",
-  "mode": "single",
+  "mode": "many",
   "projectPath": "/abs/path/to/repo",
   "targetBranch": "main",
   "targetStartSha": "def456...",
@@ -110,23 +131,60 @@ All metadata lives in project-local `.snapshot/`.
       "workspaceBranch": "snapshot/ws_20260228_001",
       "result": "merged",
       "mergeCommitSha": "fed999...",
-      "autoResolvedTextConflicts": 2,
-      "unresolvedConflicts": []
+      "autoResolvedTextConflicts": 0,
+      "unresolvedConflicts": [],
+      "artifactPath": null,
+      "message": "workspace auto-committed abcdef123456"
+    },
+    {
+      "workspaceId": "ws_20260228_002",
+      "workspaceBranch": "snapshot/ws_20260228_002",
+      "result": "conflict",
+      "mergeCommitSha": null,
+      "autoResolvedTextConflicts": 0,
+      "unresolvedConflicts": [
+        {
+          "path": "src/app.ts",
+          "class": "text_conflict",
+          "code": "UU",
+          "guidance": "Open file and resolve markers"
+        }
+      ],
+      "artifactPath": ".snapshot/merges/mg_...ws_....conflicts.json",
+      "message": "unresolved conflicts"
     }
   ]
+}
+```
+
+## Conflict Artifact Record
+
+```json
+{
+  "version": 1,
+  "mergeSessionId": "mg_20260228_001",
+  "workspaceId": "ws_20260228_002",
+  "workspaceBranch": "snapshot/ws_20260228_002",
+  "generatedAt": "2026-02-28T10:20:31.000Z",
+  "unresolvedConflicts": [
+    {
+      "path": "src/app.ts",
+      "class": "text_conflict",
+      "code": "UU",
+      "guidance": "Open file and resolve markers"
+    }
+  ],
+  "git": {
+    "stdout": "...",
+    "stderr": "..."
+  }
 }
 ```
 
 ## Validation Rules
 
 1. `projectPath` and `workspacePath` must be absolute paths.
-2. `workspaceId`, `reviewId`, and `mergeSessionId` are immutable.
-3. `version` must match supported schema version.
-4. metadata writes must be atomic to avoid partial corruption.
-5. unknown fields should be preserved where feasible for forward compatibility.
-
-## Backward Compatibility Strategy
-
-- Use integer `version` in each file.
-- On startup, run lightweight migration if known older versions are found.
-- If unsupported version is encountered, fail with actionable migration message.
+2. IDs (`workspaceId`, `reviewId`, `mergeSessionId`) are immutable.
+3. Metadata writes must be atomic.
+4. Backward-compat defaults are injected for older config/workspace records.
+5. Hard internal paths are excluded from spawned workspace content independent of user filters.

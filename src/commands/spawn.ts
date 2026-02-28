@@ -1,6 +1,6 @@
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
-import { flagString, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { flagString, parseCsvFlag, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 import type { WorkspaceBackend } from "../core/domain/workspace.js";
 
 export async function runSpawn(context: CommandContext): Promise<CommandResult> {
@@ -21,6 +21,14 @@ export async function runSpawn(context: CommandContext): Promise<CommandResult> 
   if (backendFlag && !backend) {
     throw new SnapshotError("ERR_USAGE", `invalid backend: ${backendFlag}`);
   }
+
+  const symlinkModeFlag = flagString(context.flags, "symlink-mode");
+  const symlinkMode =
+    symlinkModeFlag === "shared-live" || symlinkModeFlag === "safety-restricted" ? symlinkModeFlag : undefined;
+  if (symlinkModeFlag && !symlinkMode) {
+    throw new SnapshotError("ERR_USAGE", `invalid symlink-mode: ${symlinkModeFlag}`);
+  }
+
   const result = context.workspaceService.spawn({
     projectPath,
     workspacePath,
@@ -29,6 +37,10 @@ export async function runSpawn(context: CommandContext): Promise<CommandResult> 
     fromRef: flagString(context.flags, "from"),
     backend,
     strictBackend: context.flags["strict-backend"] === true,
+    include: context.flags.include ? parseCsvFlag(flagString(context.flags, "include")) : undefined,
+    exclude: context.flags.exclude ? parseCsvFlag(flagString(context.flags, "exclude")) : undefined,
+    symlink: context.flags.symlink ? parseCsvFlag(flagString(context.flags, "symlink")) : undefined,
+    symlinkMode,
   });
 
   if (context.useJson) {

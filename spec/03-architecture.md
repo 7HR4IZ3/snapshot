@@ -3,56 +3,71 @@
 ## High-Level Components
 
 1. CLI Layer
-   - argv parsing
-   - command dispatch
+   - argv parsing and usage rendering (`src/cli.ts`)
+   - command dispatch (`src/commands/index.ts`)
    - output formatting (human/json)
 
-2. Application Services
-   - `WorkspaceService` (spawn/status/diff/cleanup)
-   - `ReviewService` (review sessions + artifacts)
-   - `MergeService` (single and queue merges)
-   - `ConfigService` (load/validate defaults)
+2. Command Layer
+   - one file per command in `src/commands/`
+   - thin adapters that parse flags, resolve defaults, and call services
 
-3. Infrastructure
-   - `GitService` (git process wrapper)
-   - `MetadataStore` (`.snapshot/` read/write with schema validation)
-   - `LockService` (merge lock files)
-   - `Clock`/`IdGenerator` abstractions for deterministic tests
+3. Application Services
+   - `WorkspaceService`: init/spawn/status/diff/list/cleanup/repair-mounts
+   - `MergeService`: merge/merge-many/preflight
+   - `ReviewService`: review TUI + non-interactive review artifacts
+   - `RevertService`: revert merge sessions
+   - `BackendService`: host/backend capability diagnostics
 
-4. UI Layer
-   - `ReviewTUI` (Ink-based interactive interface)
+4. Infrastructure
+   - `GitService` + `git-command` wrapper (`src/infra/git/`)
+   - `MetadataStore` + schemas + validator (`src/infra/metadata/`)
+   - `LockService` (`src/infra/lock/`)
+
+5. UI Layer
+   - Review TUI in `src/ui/review/` (`app.tsx`, `keymap.ts`, `state.ts`, runner)
 
 ## Runtime and Packaging
 
 - Runtime: Bun
 - Language: TypeScript
-- Build target:
-  - dev: `bun run src/cli.ts`
-  - release prototype: `bun build --compile`
+- Dev: `bun run src/cli.ts`
+- Release JS build: `bunx tsc -p tsconfig.build.json` to `dist/`
+- CLI binary mapping: `package.json#bin.snapshot -> dist/cli.js`
 
-## Suggested Source Layout
+## Source Layout (Current)
 
 ```txt
 src/
   cli.ts
   commands/
+    index.ts
     init.ts
     spawn.ts
+    list.ts
     status.ts
     diff.ts
     review.ts
     merge.ts
     merge-many.ts
+    revert.ts
     cleanup.ts
+    unlock.ts
+    backends.ts
+    repair-mounts.ts
+    doctor.ts
+    config.ts
   core/
     services/
       workspace-service.ts
-      review-service.ts
       merge-service.ts
+      review-service.ts
+      revert-service.ts
+      backend-service.ts
     domain/
+      common.ts
       workspace.ts
-      review.ts
       merge.ts
+      review.ts
       errors.ts
     ports/
       git-port.ts
@@ -60,11 +75,12 @@ src/
       lock-port.ts
   infra/
     git/
-      git-service.ts
       git-command.ts
+      git-service.ts
     metadata/
       metadata-store.ts
       schemas.ts
+      validator.ts
     lock/
       lock-service.ts
   ui/
@@ -72,54 +88,35 @@ src/
       app.tsx
       keymap.ts
       state.ts
+      run.tsx
 ```
+
+## Workspace Backend Model
+
+- `worktree`: git worktree branch materialization.
+- `apfs-cow`: APFS copy-on-write directory clone.
+- `overlay`: overlay mount attempt with strict/fallback policy handling.
+
+Backend choice is controlled by:
+
+- command flags (`--backend`, `--strict-backend`)
+- config defaults (`workspace.backendDefault`, `workspace.fallbackPolicy`)
+
+## Workspace Content Policy
+
+Spawn applies ordered filters:
+
+1. hard excludes (always enforced)
+2. include globs
+3. exclude globs
+4. `apfs-cow` symlink globs (mode-aware)
+
+Hard excludes include snapshot internals and discovered spawned workspace directories.
 
 ## Design Rules
 
-1. Commands must be thin and delegate all logic to services.
-2. Services should be deterministic with explicit inputs and outputs.
-3. Git interaction must be centralized in `GitService`.
-4. Metadata writes must be atomic (write temp + rename).
-5. Avoid hidden side effects outside project and workspace paths.
-
-## GitService Contract
-
-`GitService` should expose typed methods rather than raw string commands at callsites.
-
-Minimum methods:
-
-- `isRepo(path): boolean`
-- `currentBranch(path): string`
-- `headSha(path): string`
-- `worktreeAdd(projectPath, workspacePath, branch, fromRef): void`
-- `worktreeRemove(projectPath, workspacePath, force): void`
-- `diffNameStatus(path, baseRef, headRef?): FileChange[]`
-- `diffPatch(path, baseRef, headRef?): string`
-- `merge(targetPath, sourceRef, options): MergeResult`
-- `hasUncommittedChanges(path): boolean`
-
-## Concurrency and Locking
-
-- Only one merge operation can run per project at a time.
-- Lock file path: `.snapshot/locks/merge.lock`.
-- Lock content includes pid, hostname, workspace ids, start timestamp.
-- stale lock recovery allowed if process no longer exists and `--force-unlock` passed.
-
-## Error Handling
-
-Domain errors map to stable error codes and friendly messages.
-
-Examples:
-
-- `ERR_NOT_GIT_REPO`
-- `ERR_WORKSPACE_NOT_FOUND`
-- `ERR_WORKSPACE_PATH_EXISTS`
-- `ERR_TARGET_DIRTY`
-- `ERR_MERGE_CONFLICT`
-- `ERR_LOCK_HELD`
-
-## Logging and Diagnostics
-
-- Human mode: concise user messages.
-- Verbose mode: include executed git commands, timings, and resolved refs.
-- Debug logs should never print secrets (none expected in v1, but enforce anyway).
+1. Commands remain thin and delegate logic to services.
+2. Metadata writes must be atomic.
+3. Git operations are centralized in `GitService`.
+4. Merge and revert operations are lock- and state-aware.
+5. Spawns must never leak project-internal snapshot/spawn artifacts.

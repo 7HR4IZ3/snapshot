@@ -14,6 +14,10 @@ export interface SpawnInput {
   fromRef?: string;
   backend?: WorkspaceBackend | "auto";
   strictBackend?: boolean;
+  include?: string[];
+  exclude?: string[];
+  symlink?: string[];
+  symlinkMode?: "shared-live" | "safety-restricted";
 }
 
 export interface RepairMountsInput {
@@ -94,14 +98,19 @@ export class WorkspaceService {
       this.spawnOverlayWorkspace(projectPath, workspacePath, branch, fromRef, workspaceId, input.strictBackend ?? false);
     }
 
+    const effectiveInclude = input.include ?? config.workspace.include;
+    const effectiveExclude = input.exclude ?? config.workspace.exclude;
+    const effectiveSymlink = input.symlink ?? config.workspace.symlink;
+    const effectiveSymlinkMode = input.symlinkMode ?? config.workspace.symlinkMode;
+
     const alwaysExcluded = this.alwaysExcludedPaths(projectPath, workspacePath, workspaceId);
-    this.applyWorkspaceFilters(workspacePath, config.workspace.include, config.workspace.exclude, alwaysExcluded);
+    this.applyWorkspaceFilters(workspacePath, effectiveInclude, effectiveExclude, alwaysExcluded);
     if (backend === "apfs-cow") {
       this.applyWorkspaceSymlinks(
         projectPath,
         workspacePath,
-        config.workspace.symlink,
-        config.workspace.symlinkMode,
+        effectiveSymlink,
+        effectiveSymlinkMode,
         alwaysExcluded,
       );
     }

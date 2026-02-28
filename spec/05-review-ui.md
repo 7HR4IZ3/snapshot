@@ -66,6 +66,12 @@ Optional markdown export (`--export`) includes:
 - concise file decision table
 - reviewer notes
 
+## Non-Interactive Review Modes
+
+- `--readonly`: no artifact write; returns preview data only.
+- `--approve-all`: creates an approved review artifact without TUI (for automation/CI use cases).
+- Interactive mode requires TTY; non-TTY flows must use `--readonly` or `--approve-all`.
+
 ## UX Constraints
 
 - Must handle large diffs gracefully (lazy load per-file hunks).

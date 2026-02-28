@@ -20,7 +20,7 @@ Single merge integrates `workspaceBranch` into the current target branch.
 
 - Merge engine: git `ort` strategy.
 - Default preference: workspace side on text conflicts.
-- Auto-commit: enabled unless `--no-commit`.
+- Auto-commit: controlled by config `merge.autoCommit` unless overridden by `--commit`/`--no-commit`.
 
 ## Conflict Classes
 
@@ -49,15 +49,19 @@ Single merge integrates `workspaceBranch` into the current target branch.
 1. Acquire merge lock.
 2. Validate target repo is clean.
 3. Validate workspace branch exists.
-4. Attempt merge with configured preference.
-5. If unresolved conflicts remain:
+4. Auto-checkpoint uncommitted workspace changes into workspace branch.
+5. Resolve source ref for merge:
+   - `worktree`: merge workspace branch directly.
+   - non-worktree backends: import workspace branch into target repo and merge import ref.
+6. Attempt merge with configured preference.
+7. If unresolved conflicts remain:
    - capture `git status --porcelain` and conflict markers
    - write conflict report artifact
    - exit with code `3`
-6. If merge succeeds:
+8. If merge succeeds:
    - create merge session artifact
    - return summary (files changed, conflicts auto-resolved count)
-7. Release lock.
+9. Release lock.
 
 ## Multi Merge Queue (`merge-many`)
 
@@ -77,7 +81,12 @@ Supported ordering:
    - run single merge flow against evolving target HEAD
    - record outcome
 4. Default stop-on-first-unresolved-conflict.
-5. If `--continue-on-conflict`, proceed and record failed entries.
+5. If `--continue-on-conflict`, proceed and record failed/conflict entries.
+6. If stop-on-conflict is active, remaining queued entries are recorded as `skipped`.
+
+## Preflight Mode
+
+`merge-many --preflight` validates refs and outputs eligibility and execution order without mutating target repo state.
 
 ## Determinism Requirements
 
@@ -101,6 +110,7 @@ Supported ordering:
 ## Policy Knobs (Config)
 
 - `merge.prefer`: `virtual|target`
+- `merge.autoCommit`: boolean
 - `merge.stopOnConflict`: boolean
 - `merge.allowBinaryAutoResolve`: boolean (default false)
 - `merge.defaultOrder`: `created|priority|manual`

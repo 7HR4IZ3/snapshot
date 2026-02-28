@@ -59,7 +59,7 @@ function usage(): string {
     "",
     "Commands:",
     "  snapshot init [project-path] [--force]",
-    "  snapshot spawn [project-path] <workspace-path> [--agent <id>] [--label <name>] [--from <ref>] [--backend auto|worktree|apfs-cow|overlay] [--strict-backend]",
+    "  snapshot spawn [project-path] <workspace-path> [--agent <id>] [--label <name>] [--from <ref>] [--backend auto|worktree|apfs-cow|overlay] [--strict-backend] [--include <csv-globs>] [--exclude <csv-globs>] [--symlink <csv-globs>] [--symlink-mode shared-live|safety-restricted]",
     "  snapshot list [project-path]",
     "  snapshot status <workspace-path|workspace-id>",
     "  snapshot diff <workspace-path|workspace-id> [--name-only|--patch|--stat] [--base <sha>]",

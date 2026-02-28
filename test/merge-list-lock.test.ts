@@ -264,6 +264,46 @@ describe("snapshot merge/list/lock", () => {
     expect(lstatSync(join(workspaceOk, "generated")).isSymbolicLink()).toBe(true);
   }, 20000);
 
+  test("spawn command supports include/exclude/symlink overrides", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-spawn-flags`;
+
+    mkdirSync(join(repo, "pkg", "private"), { recursive: true });
+    mkdirSync(join(repo, "generated"), { recursive: true });
+    writeFileSync(join(repo, "pkg", "keep.ts"), "export const keep = true;\n", "utf8");
+    writeFileSync(join(repo, "pkg", "private", "drop.ts"), "export const drop = true;\n", "utf8");
+    writeFileSync(join(repo, "generated", "cache.json"), "{}\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "spawn flags fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+
+    const spawn = runSnapshot(
+      [
+        "spawn",
+        repo,
+        workspace,
+        "--backend",
+        "apfs-cow",
+        "--include",
+        "pkg/**,generated/**",
+        "--exclude",
+        "**/private/**",
+        "--symlink",
+        "generated/**",
+        "--symlink-mode",
+        "shared-live",
+        "--json",
+      ],
+      cliRoot,
+    );
+    expect(spawn.code).toBe(0);
+
+    expect(existsSync(join(workspace, "pkg", "keep.ts"))).toBe(true);
+    expect(existsSync(join(workspace, "pkg", "private"))).toBe(false);
+    expect(lstatSync(join(workspace, "generated")).isSymbolicLink()).toBe(true);
+  }, 20000);
+
   test("config set/get updates backend and merge autoCommit", () => {
     const cliRoot = process.cwd();
     const repo = setupRepo();

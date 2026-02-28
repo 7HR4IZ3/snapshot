@@ -4,143 +4,201 @@
 
 - Binary: `snapshot`
 - Global flags:
-  - `--json`: print machine-readable output where supported
+  - `--json`: machine-readable output where supported
   - `--verbose`: include debug diagnostics
-  - `--no-color`: disable ANSI color
 
 ## Exit Codes
 
 - `0`: success
 - `1`: generic failure
-- `2`: invalid usage or validation error
-- `3`: merge conflict detected
-- `4`: repository state unsafe (dirty target, lock held, detached HEAD, etc.)
+- `2`: invalid usage / validation failure
+- `3`: merge or revert conflict (`ERR_MERGE_CONFLICT`, `ERR_REVERT_CONFLICT`)
+- `4`: unsafe repository state (`ERR_TARGET_DIRTY`, `ERR_LOCK_HELD`)
 
-## `snapshot init <project-path>`
+## Path Resolution Rules
 
-Initializes snapshot metadata in a git repository.
+For commands with optional `[project-path]`:
+
+1. If path is provided, use it.
+2. Else if current directory is a spawned workspace, resolve project via `.snapshot-workspace.json`.
+3. Else try to resolve project by discovering `.snapshot/` upward from cwd.
+4. Else fallback to cwd where command semantics allow (for initialization and diagnostics).
+
+## `snapshot init [project-path]`
+
+Initialize snapshot metadata in a git repository.
 
 ### Behavior
 
-1. Validate `<project-path>` exists and is a git repository.
-2. Create `.snapshot/` structure if missing.
-3. Write default config if absent.
-4. Do not overwrite existing config unless `--force` provided.
+1. Validate target path is a git repository.
+2. Create `.snapshot/` layout if missing.
+3. Write default config if absent (or overwrite with `--force`).
+4. If already initialized and not forced, return success with `created=false`.
+5. If called from a spawned workspace directory, fail (`ERR_USAGE`).
 
 ### Flags
 
-- `--force`: overwrite default config values
+- `--force`
 
-## `snapshot spawn <project-path> <workspace-path>`
+## `snapshot spawn [project-path] <workspace-path>`
 
-Creates a new workspace branch + worktree and records metadata.
+Create new workspace and metadata record.
 
 ### Behavior
 
 1. Validate project is initialized.
-2. Resolve base branch and base commit (default: current HEAD branch/commit).
-3. Allocate unique workspace id.
-4. Create branch name: `snapshot/<workspace-id>`.
-5. Create git worktree at `<workspace-path>`.
-6. Write workspace metadata record.
+2. Resolve `baseCommit` from `--from` (default `HEAD`).
+3. Choose backend (`--backend` or config default):
+   - `worktree`
+   - `apfs-cow`
+   - `overlay`
+   - `auto`
+4. Honor fallback policy (`--strict-backend` or config policy).
+5. Ensure parent of workspace path exists (recursive mkdir).
+6. Apply workspace content policy:
+   - include globs
+   - exclude globs
+   - `apfs-cow` symlink globs
+   - hard excludes always enforced
+7. Persist workspace marker and workspace record.
 
 ### Flags
 
-- `--agent <agent-id>`: logical owner id
-- `--from <branch-or-sha>`: explicit spawn base
-- `--label <name>`: human-readable workspace label
+- `--agent <id>`
+- `--label <name>`
+- `--from <branch-or-sha>`
+- `--backend <auto|worktree|apfs-cow|overlay>`
+- `--strict-backend`
+- `--include <csv-globs>`
+- `--exclude <csv-globs>`
+- `--symlink <csv-globs>` (applies only to `apfs-cow`)
+- `--symlink-mode <shared-live|safety-restricted>`
 
 ## `snapshot status <workspace-path|workspace-id>`
 
-Shows workspace status and divergence information.
-
-### Output
-
-- workspace id, agent id, label
-- branch, base commit, current HEAD
-- changed files count and summary by status (A/M/D/R)
-- review status (not-reviewed, in-review, approved, rejected)
+Outputs workspace metadata, backend, review status, and diff summary from `baseCommit`.
 
 ## `snapshot diff <workspace-path|workspace-id>`
 
-Prints changes relative to workspace base.
+Shows changes relative to `baseCommit`.
 
 ### Flags
 
-- `--name-only`: file list only
-- `--patch`: full patch (default in human mode)
-- `--stat`: compact diff stat
-- `--base <sha>`: override default base for ad-hoc inspection
+- `--name-only`
+- `--patch` (default human mode)
+- `--stat`
+- `--base <sha>`
+
+## `snapshot list [project-path]`
+
+List known workspaces with backend, status, and changed file counts.
 
 ## `snapshot review <workspace-path|workspace-id>`
 
-Starts interactive review TUI for the workspace.
-
-### Behavior
-
-1. Build file list from diff against base.
-2. Let reviewer navigate files and hunks.
-3. Capture approve/reject/note decisions.
-4. Persist review artifact under `.snapshot/reviews/`.
+Interactive or non-interactive review workflow.
 
 ### Flags
 
-- `--reviewer <id>`: reviewer identity
-- `--export <path>`: write markdown summary file
-- `--readonly`: no state changes, browse only
+- `--reviewer <id>`
+- `--export <path>`
+- `--readonly`
+- `--approve-all` (non-interactive artifact creation)
 
-## `snapshot merge <workspace-ref> <project-path>`
+## `snapshot merge <workspace-ref> [project-path]`
 
-Merges one workspace into target branch.
+Merge one workspace into target branch.
 
 ### Behavior
 
-1. Acquire project merge lock.
-2. Validate target branch is clean and checked out.
-3. Execute merge strategy (default virtual preferred for text conflicts).
-4. Emit conflict report and exit code `3` on unresolved conflicts.
-5. Record merge session metadata.
+1. Acquire merge lock.
+2. Validate target is clean.
+3. Auto-checkpoint uncommitted workspace changes before merge.
+4. Merge with configured or explicit preference.
+5. Respect merge commit mode (`--commit`, `--no-commit`, or config `merge.autoCommit`).
+6. Persist merge session and update workspace status.
 
 ### Flags
 
-- `--target <branch>`: merge destination (default current branch)
-- `--prefer <virtual|target>`: conflict preference for text hunks
-- `--commit/--no-commit`: finalize commit automatically (default commit)
-- `--message <text>`: merge commit message override
+- `--target <branch>`
+- `--prefer <virtual|target>`
+- `--commit`
+- `--no-commit`
+- `--message <text>`
 
-## `snapshot merge-many <project-path> --from <refs>`
+## `snapshot merge-many [project-path] --from <refs>`
 
-Queues multiple workspace merges in deterministic order.
-
-### Behavior
-
-1. Parse refs as comma-separated workspace ids/paths.
-2. Sort by configured ordering strategy.
-3. Merge each workspace sequentially into evolving target.
-4. On conflict: stop by default; write partial report.
+Queue merge workspaces in deterministic order.
 
 ### Flags
 
 - `--order <created|priority|manual>`
-- `--continue-on-conflict`: continue processing remaining workspaces
+- `--continue-on-conflict`
+- `--stop-on-conflict`
+- `--preflight`
 - `--prefer <virtual|target>`
-- `--report <path>`: export JSON merge report
+- `--commit`
+- `--no-commit`
+- `--message <text>`
+- `--report <path>`
 
-## `snapshot cleanup <workspace-ref>`
+## `snapshot revert [project-path]`
 
-Removes workspace worktree and optionally branch metadata.
+Revert merge-session commits in reverse order.
 
 ### Flags
 
-- `--delete-branch`: delete workspace branch
-- `--force`: cleanup even when unmerged changes exist
+- `--session <merge-session-id>`
+- `--last`
+- `--abort`
+
+## `snapshot cleanup`
+
+### Forms
+
+- `snapshot cleanup <workspace-ref> [--delete-branch] [--force]`
+- `snapshot cleanup [project-path] --all-archived`
+
+## `snapshot unlock [project-path] --force`
+
+Force-remove merge lock file.
+
+## `snapshot backends [project-path]`
+
+Show backend capability matrix and project backend summary.
+
+## `snapshot repair-mounts [project-path]`
+
+Repair overlay state metadata for stale/missing mounted workspaces.
+
+## `snapshot doctor [project-path] [--repair]`
+
+Combined health check (repo state, snapshot state, lock state, backend capabilities), with optional overlay repair.
+
+## `snapshot config`
+
+### Forms
+
+- `snapshot config get [project-path]`
+- `snapshot config set <key> <value> [project-path]`
+
+### Supported Keys
+
+- `workspace.backendDefault`
+- `workspace.fallbackPolicy`
+- `workspace.include`
+- `workspace.exclude`
+- `workspace.symlink`
+- `workspace.symlinkMode`
+- `merge.autoCommit`
+- `merge.stopOnConflict`
+- `review.requireApprovalBeforeMerge`
 
 ## JSON Output Contract
 
-When `--json` is enabled, all command responses must include:
+All JSON responses include:
 
-- `ok`: boolean
-- `command`: command name
-- `timestamp`: ISO timestamp
-- `data`: command-specific object
-- `errors`: array of structured error objects
+- `ok`
+- `command`
+- `timestamp`
+- `data`
+- `errors`
