@@ -1,1 +1,1 @@
-export { SnapshotError } from "./domain/errors";
+export { SnapshotError } from "./domain/errors.js";

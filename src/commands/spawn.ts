@@ -1,11 +1,18 @@
-import type { CommandContext, CommandResult } from "./types";
-import { SnapshotError } from "../core/errors";
-import { assertPositional, flagString, toJsonResponse } from "./utils";
-import type { WorkspaceBackend } from "../core/domain/workspace";
+import type { CommandContext, CommandResult } from "./types.js";
+import { SnapshotError } from "../core/errors.js";
+import { flagString, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import type { WorkspaceBackend } from "../core/domain/workspace.js";
 
 export async function runSpawn(context: CommandContext): Promise<CommandResult> {
-  const projectPath = assertPositional(context.positionals, 0, "project-path");
-  const workspacePath = assertPositional(context.positionals, 1, "workspace-path");
+  const positionals = context.positionals;
+  const projectPath =
+    positionals.length >= 2
+      ? resolveProjectPathFromContext(context.cwd, positionals[0])
+      : resolveProjectPathFromContext(context.cwd);
+  const workspacePath = positionals.length >= 2 ? positionals[1] : positionals[0];
+  if (!workspacePath) {
+    throw new SnapshotError("ERR_USAGE", "missing required argument: workspace-path");
+  }
   const backendFlag = flagString(context.flags, "backend");
   const backend: WorkspaceBackend | "auto" | undefined =
     backendFlag === "worktree" || backendFlag === "apfs-cow" || backendFlag === "overlay" || backendFlag === "auto"

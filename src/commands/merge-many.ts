@@ -1,14 +1,11 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { CommandContext, CommandResult } from "./types";
-import { SnapshotError } from "../core/errors";
-import { flagString, parseCsvFlag, toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { SnapshotError } from "../core/errors.js";
+import { flagString, parseCsvFlag, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runMergeMany(context: CommandContext): Promise<CommandResult> {
-  const projectPath = context.positionals[0];
-  if (!projectPath) {
-    throw new SnapshotError("ERR_USAGE", "missing required argument: project-path");
-  }
+  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
 
   const refs = parseCsvFlag(flagString(context.flags, "from"));
   if (refs.length === 0) {

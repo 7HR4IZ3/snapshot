@@ -1,6 +1,6 @@
-import type { MergeSessionRecord } from "../domain/merge";
-import type { ReviewRecord } from "../domain/review";
-import type { SnapshotConfig, WorkspaceMarker, WorkspaceRecord } from "../domain/workspace";
+import type { MergeSessionRecord } from "../domain/merge.js";
+import type { ReviewRecord } from "../domain/review.js";
+import type { SnapshotConfig, WorkspaceMarker, WorkspaceRecord } from "../domain/workspace.js";
 
 export interface MetadataPort {
   ensureProjectLayout(projectPath: string): void;

@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { GitService } from "../../infra/git/git-service";
-import { MetadataStore } from "../../infra/metadata/metadata-store";
+import { GitService } from "../../infra/git/git-service.js";
+import { MetadataStore } from "../../infra/metadata/metadata-store.js";
 
 export interface BackendInspection {
   host: {

@@ -19,7 +19,7 @@ function runGit(args: string[], cwd: string): { code: number; stdout: string; st
 }
 
 function runSnapshot(args: string[], cwd: string): { code: number; stdout: string; stderr: string } {
-  return run([process.execPath, "run", "src/cli.ts", ...args], cwd);
+  return run([process.execPath, "run", join(process.cwd(), "src", "cli.ts"), ...args], cwd);
 }
 
 function expectGitOk(args: string[], cwd: string): void {

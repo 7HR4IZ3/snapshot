@@ -1,24 +1,24 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { JsonError, JsonResponse } from "../core/domain/common";
-import { SnapshotError } from "../core/errors";
-import type { CommandContext, CommandResult } from "./types";
-import { toJsonResponse, flagString } from "./utils";
-import { runInit } from "./init";
-import { runSpawn } from "./spawn";
-import { runList } from "./list";
-import { runStatus } from "./status";
-import { runDiff } from "./diff";
-import { runReview } from "./review";
-import { runMerge } from "./merge";
-import { runMergeMany } from "./merge-many";
-import { runCleanup } from "./cleanup";
-import { runUnlock } from "./unlock";
-import { runRevert } from "./revert";
-import { runBackends } from "./backends";
-import { runConfig } from "./config";
-import { runRepairMounts } from "./repair-mounts";
-import { runDoctor } from "./doctor";
+import type { JsonError, JsonResponse } from "../core/domain/common.js";
+import { SnapshotError } from "../core/errors.js";
+import type { CommandContext, CommandResult } from "./types.js";
+import { toJsonResponse, flagString } from "./utils.js";
+import { runInit } from "./init.js";
+import { runSpawn } from "./spawn.js";
+import { runList } from "./list.js";
+import { runStatus } from "./status.js";
+import { runDiff } from "./diff.js";
+import { runReview } from "./review.js";
+import { runMerge } from "./merge.js";
+import { runMergeMany } from "./merge-many.js";
+import { runCleanup } from "./cleanup.js";
+import { runUnlock } from "./unlock.js";
+import { runRevert } from "./revert.js";
+import { runBackends } from "./backends.js";
+import { runConfig } from "./config.js";
+import { runRepairMounts } from "./repair-mounts.js";
+import { runDoctor } from "./doctor.js";
 
 export type CommandName =
   | "init"

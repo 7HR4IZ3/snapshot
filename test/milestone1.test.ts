@@ -22,7 +22,7 @@ function runGit(args: string[], cwd: string): void {
 }
 
 function runSnapshot(args: string[], cwd: string): { code: number; stdout: string; stderr: string } {
-  return run([process.execPath, "run", "src/cli.ts", ...args], cwd);
+  return run([process.execPath, "run", join(process.cwd(), "src", "cli.ts"), ...args], cwd);
 }
 
 function setupRepo(): string {
@@ -45,19 +45,24 @@ afterEach(() => {
 
 describe("snapshot milestone1", () => {
   test("init, spawn, status, diff flow", () => {
-    const cliRoot = process.cwd();
     const repo = setupRepo();
     const workspace = `${repo}-workspace-a`;
 
-    const init = runSnapshot(["init", repo], cliRoot);
+    const init = runSnapshot(["init"], repo);
     expect(init.code).toBe(0);
 
-    const spawn = runSnapshot(["spawn", repo, workspace, "--agent", "agent-1"], cliRoot);
+    const initAgain = runSnapshot(["init"], repo);
+    expect(initAgain.code).toBe(0);
+
+    const spawn = runSnapshot(["spawn", workspace, "--agent", "agent-1"], repo);
     expect(spawn.code).toBe(0);
+
+    const initFromSpawned = runSnapshot(["init"], workspace);
+    expect(initFromSpawned.code).toBe(2);
 
     writeFileSync(join(workspace, "hello.txt"), "hello from workspace\n", "utf8");
 
-    const status = runSnapshot(["status", workspace, "--json"], cliRoot);
+    const status = runSnapshot(["status", workspace, "--json"], repo);
     expect(status.code).toBe(0);
     const statusJson = JSON.parse(status.stdout) as {
       ok: boolean;
@@ -66,11 +71,15 @@ describe("snapshot milestone1", () => {
     expect(statusJson.ok).toBe(true);
     expect(statusJson.data.changedFiles).toBeGreaterThan(0);
 
-    const diff = runSnapshot(["diff", workspace], cliRoot);
+    const diff = runSnapshot(["diff", workspace], repo);
     expect(diff.code).toBe(0);
     expect(diff.stdout).toContain("hello from workspace");
 
-    const backends = runSnapshot(["backends", repo, "--json"], cliRoot);
+    const nestedWorkspace = `${repo}-nested/one/two/workspace-b`;
+    const nestedSpawn = runSnapshot(["spawn", nestedWorkspace, "--json"], repo);
+    expect(nestedSpawn.code).toBe(0);
+
+    const backends = runSnapshot(["backends", "--json"], repo);
     expect(backends.code).toBe(0);
     const backendsJson = JSON.parse(backends.stdout) as {
       ok: boolean;
@@ -88,7 +97,7 @@ describe("snapshot milestone1", () => {
     expect(backendsJson.data.project?.isGitRepo).toBe(true);
     expect(backendsJson.data.project?.isSnapshotInitialized).toBe(true);
 
-    const doctor = runSnapshot(["doctor", repo, "--json"], cliRoot);
+    const doctor = runSnapshot(["doctor", "--json"], repo);
     expect(doctor.code).toBe(0);
     const doctorJson = JSON.parse(doctor.stdout) as {
       ok: boolean;

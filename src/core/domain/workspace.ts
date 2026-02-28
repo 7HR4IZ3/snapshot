@@ -1,4 +1,4 @@
-import type { MergeOrder, MergePrefer } from "./merge";
+import type { MergeOrder, MergePrefer } from "./merge.js";
 
 export type WorkspaceBackend = "worktree" | "apfs-cow" | "overlay";
 
@@ -8,6 +8,10 @@ export interface SnapshotConfig {
   workspace: {
     backendDefault: WorkspaceBackend | "auto";
     fallbackPolicy: "best-available" | "error";
+    include: string[];
+    exclude: string[];
+    symlink: string[];
+    symlinkMode: "shared-live" | "safety-restricted";
   };
   merge: {
     prefer: MergePrefer;

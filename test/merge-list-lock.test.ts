@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -19,7 +19,7 @@ function runGit(args: string[], cwd: string): { code: number; stdout: string; st
 }
 
 function runSnapshot(args: string[], cwd: string): { code: number; stdout: string; stderr: string } {
-  return run([process.execPath, "run", "src/cli.ts", ...args], cwd);
+  return run([process.execPath, "run", join(process.cwd(), "src", "cli.ts"), ...args], cwd);
 }
 
 function expectGitOk(args: string[], cwd: string): void {
@@ -195,6 +195,73 @@ describe("snapshot merge/list/lock", () => {
     expect(spawnJson.ok).toBe(true);
     expect(["worktree", "apfs-cow", "overlay"]).toContain(spawnJson.data.backend);
     expect(spawnJson.data.workspacePath).toBe(workspace);
+  }, 20000);
+
+  test("spawn applies include/exclude filters and always excludes project workspace folders", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-filtered`;
+
+    mkdirSync(join(repo, "keep", "private"), { recursive: true });
+    mkdirSync(join(repo, ".spawned", "old-workspace"), { recursive: true });
+    writeFileSync(join(repo, "keep", "file.txt"), "keep\n", "utf8");
+    writeFileSync(join(repo, "keep", "private", "secret.txt"), "secret\n", "utf8");
+    writeFileSync(join(repo, "drop.txt"), "drop\n", "utf8");
+    writeFileSync(join(repo, ".spawned", "old-workspace", "old.txt"), "old\n", "utf8");
+    mkdirSync(join(repo, "legacy", "spawned-a"), { recursive: true });
+    writeFileSync(
+      join(repo, "legacy", "spawned-a", ".snapshot-workspace.json"),
+      JSON.stringify({ version: 1, workspaceId: "legacy", projectPath: repo }),
+      "utf8",
+    );
+    writeFileSync(join(repo, "legacy", "spawned-a", "legacy.txt"), "legacy\n", "utf8");
+
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "add filter fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "workspace.include", "keep/**", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "workspace.exclude", "**/private/**", repo], cliRoot).code).toBe(0);
+
+    const spawn = runSnapshot(["spawn", repo, workspace, "--backend", "apfs-cow", "--json"], cliRoot);
+    expect(spawn.code).toBe(0);
+
+    expect(existsSync(join(workspace, "keep", "file.txt"))).toBe(true);
+    expect(existsSync(join(workspace, "keep", "private"))).toBe(false);
+    expect(existsSync(join(workspace, "drop.txt"))).toBe(false);
+    expect(existsSync(join(workspace, ".spawned"))).toBe(false);
+    expect(existsSync(join(workspace, ".snapshot"))).toBe(false);
+    expect(existsSync(join(workspace, "legacy", "spawned-a"))).toBe(false);
+  }, 20000);
+
+  test("apfs-cow symlink patterns support globs with safety modes", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspaceFail = `${repo}-workspace-symlink-fail`;
+    const workspaceOk = `${repo}-workspace-symlink-ok`;
+
+    mkdirSync(join(repo, "shared"), { recursive: true });
+    mkdirSync(join(repo, "generated"), { recursive: true });
+    writeFileSync(join(repo, "shared", "live.txt"), "live\n", "utf8");
+    writeFileSync(join(repo, "generated", "tmp.txt"), "tmp\n", "utf8");
+    writeFileSync(join(repo, ".gitignore"), "generated/\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "add symlink fixtures"], repo);
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "workspace.symlink", "shared/**", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "workspace.symlinkMode", "safety-restricted", repo], cliRoot).code).toBe(0);
+
+    const failSpawn = runSnapshot(["spawn", repo, workspaceFail, "--backend", "apfs-cow", "--json"], cliRoot);
+    expect(failSpawn.code).toBe(1);
+    expect(failSpawn.stdout).toContain("ERR_SYMLINK_RESTRICTED");
+
+    expect(runSnapshot(["config", "set", "workspace.symlink", "shared/**,generated/**", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "workspace.symlinkMode", "shared-live", repo], cliRoot).code).toBe(0);
+
+    const okSpawn = runSnapshot(["spawn", repo, workspaceOk, "--backend", "apfs-cow", "--json"], cliRoot);
+    expect(okSpawn.code).toBe(0);
+    expect(lstatSync(join(workspaceOk, "shared")).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(workspaceOk, "generated")).isSymbolicLink()).toBe(true);
   }, 20000);
 
   test("config set/get updates backend and merge autoCommit", () => {

@@ -1,10 +1,10 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { ReviewDecision, ReviewFileRecord, ReviewOverallDecision, ReviewRecord } from "../domain/review";
-import { SnapshotError } from "../errors";
-import { GitService } from "../../infra/git/git-service";
-import { MetadataStore } from "../../infra/metadata/metadata-store";
-import { runReviewTui } from "../../ui/review/run";
+import type { ReviewDecision, ReviewFileRecord, ReviewOverallDecision, ReviewRecord } from "../domain/review.js";
+import { SnapshotError } from "../errors.js";
+import { GitService } from "../../infra/git/git-service.js";
+import { MetadataStore } from "../../infra/metadata/metadata-store.js";
+import { runReviewTui } from "../../ui/review/run.js";
 
 export interface ReviewInput {
   workspaceRef: string;

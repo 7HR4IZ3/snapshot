@@ -1,8 +1,8 @@
-import type { CommandContext, CommandResult } from "./types";
-import { flagString, toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { flagString, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runRevert(context: CommandContext): Promise<CommandResult> {
-  const projectPath = context.positionals[0] ?? context.cwd;
+  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
   const mergeSessionId = flagString(context.flags, "session");
   const last = context.flags.last === true;
   const abort = context.flags.abort === true;

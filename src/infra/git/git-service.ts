@@ -3,8 +3,8 @@ import { isAbsolute, resolve } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { SnapshotError } from "../../core/errors";
-import { runGitCommand } from "./git-command";
+import { SnapshotError } from "../../core/errors.js";
+import { runGitCommand } from "./git-command.js";
 
 export interface FileChange {
   status: string;
@@ -259,6 +259,23 @@ export class GitService {
       stderr: "pipe",
     });
     return probe.exitCode === 0;
+  }
+
+  isIgnored(path: string, relPath: string): boolean {
+    const out = runGitRaw(["check-ignore", "-q", "--", relPath], path);
+    if (out.exitCode === 0) {
+      return true;
+    }
+    if (out.exitCode === 1) {
+      return false;
+    }
+    throw new SnapshotError("ERR_GIT_COMMAND_FAILED", out.stderr || "git check-ignore failed", {
+      path,
+      relPath,
+      stdout: out.stdout,
+      stderr: out.stderr,
+      exitCode: out.exitCode,
+    });
   }
 
   fetchLocalBranch(targetRepoPath: string, sourceRepoPath: string, sourceBranch: string, localRef: string): void {

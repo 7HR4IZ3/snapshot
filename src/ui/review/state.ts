@@ -1,4 +1,4 @@
-import type { ReviewDecision } from "../../core/domain/review";
+import type { ReviewDecision } from "../../core/domain/review.js";
 
 export interface ReviewItemState {
   decision: ReviewDecision;

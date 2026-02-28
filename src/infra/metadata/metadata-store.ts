@@ -4,11 +4,11 @@ import type {
   SnapshotConfig,
   WorkspaceMarker,
   WorkspaceRecord,
-} from "../../core/domain/workspace";
-import type { ReviewRecord } from "../../core/domain/review";
-import type { MergeSessionRecord } from "../../core/domain/merge";
-import { SnapshotError } from "../../core/errors";
-import { assertValidConfig, assertValidWorkspaceMarker, assertValidWorkspaceRecord } from "./validator";
+} from "../../core/domain/workspace.js";
+import type { ReviewRecord } from "../../core/domain/review.js";
+import type { MergeSessionRecord } from "../../core/domain/merge.js";
+import { SnapshotError } from "../../core/errors.js";
+import { assertValidConfig, assertValidWorkspaceMarker, assertValidWorkspaceRecord } from "./validator.js";
 
 export const SNAPSHOT_DIR = ".snapshot";
 const WORKSPACES_DIR = "workspaces";
@@ -97,7 +97,24 @@ export class MetadataStore {
       raw.workspace = {
         backendDefault: "auto",
         fallbackPolicy: "best-available",
+        include: [],
+        exclude: [],
+        symlink: [],
+        symlinkMode: "shared-live",
       };
+    }
+    const workspace = raw.workspace as Record<string, unknown> | undefined;
+    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "include")) {
+      workspace.include = [];
+    }
+    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "exclude")) {
+      workspace.exclude = [];
+    }
+    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "symlink")) {
+      workspace.symlink = [];
+    }
+    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "symlinkMode")) {
+      workspace.symlinkMode = "shared-live";
     }
     const merge = raw.merge as Record<string, unknown> | undefined;
     if (merge && !Object.prototype.hasOwnProperty.call(merge, "autoCommit")) {
@@ -260,6 +277,10 @@ export function defaultConfig(projectPath: string): SnapshotConfig {
     workspace: {
       backendDefault: "auto",
       fallbackPolicy: "best-available",
+      include: [],
+      exclude: [],
+      symlink: [],
+      symlinkMode: "shared-live",
     },
     merge: {
       prefer: "virtual",

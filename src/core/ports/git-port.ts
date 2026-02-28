@@ -1,4 +1,4 @@
-import type { MergeAttemptResult, MergeOptions, PorcelainEntry } from "../../infra/git/git-service";
+import type { MergeAttemptResult, MergeOptions, PorcelainEntry } from "../../infra/git/git-service.js";
 
 export interface FileChange {
   status: string;

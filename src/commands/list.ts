@@ -1,5 +1,5 @@
-import type { CommandContext, CommandResult } from "./types";
-import { toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { toJsonResponse } from "./utils.js";
 
 export async function runList(context: CommandContext): Promise<CommandResult> {
   const projectPath = context.positionals[0] ?? context.cwd;

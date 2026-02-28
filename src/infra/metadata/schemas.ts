@@ -8,8 +8,12 @@ export const snapshotConfigSchema = {
       properties: {
         backendDefault: { type: "string", enum: ["auto", "worktree", "apfs-cow", "overlay"] },
         fallbackPolicy: { type: "string", enum: ["best-available", "error"] },
+        include: { type: "array", items: { type: "string" } },
+        exclude: { type: "array", items: { type: "string" } },
+        symlink: { type: "array", items: { type: "string" } },
+        symlinkMode: { type: "string", enum: ["shared-live", "safety-restricted"] },
       },
-      required: ["backendDefault", "fallbackPolicy"],
+      required: ["backendDefault", "fallbackPolicy", "include", "exclude", "symlink", "symlinkMode"],
       additionalProperties: false,
     },
     merge: {

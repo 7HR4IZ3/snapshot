@@ -1,5 +1,5 @@
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { SnapshotError } from "../../core/errors";
+import { SnapshotError } from "../../core/errors.js";
 
 interface LockPayload {
   pid: number;

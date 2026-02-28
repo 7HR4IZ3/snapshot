@@ -6,13 +6,13 @@ import type {
   MergePrefer,
   MergeSessionEntry,
   MergeSessionRecord,
-} from "../domain/merge";
-import type { WorkspaceRecord } from "../domain/workspace";
-import { SnapshotError } from "../errors";
-import type { PorcelainEntry } from "../../infra/git/git-service";
-import { GitService } from "../../infra/git/git-service";
-import { LockService } from "../../infra/lock/lock-service";
-import { MetadataStore } from "../../infra/metadata/metadata-store";
+} from "../domain/merge.js";
+import type { WorkspaceRecord } from "../domain/workspace.js";
+import { SnapshotError } from "../errors.js";
+import type { PorcelainEntry } from "../../infra/git/git-service.js";
+import { GitService } from "../../infra/git/git-service.js";
+import { LockService } from "../../infra/lock/lock-service.js";
+import { MetadataStore } from "../../infra/metadata/metadata-store.js";
 
 export interface MergeInput {
   workspaceRef: string;

@@ -1,6 +1,6 @@
 import React from "react";
 import { render } from "ink";
-import { ReviewApp, type ReviewTuiFile, type ReviewTuiResult } from "./app";
+import { ReviewApp, type ReviewTuiFile, type ReviewTuiResult } from "./app.js";
 
 export async function runReviewTui(files: ReviewTuiFile[]): Promise<ReviewTuiResult> {
   return await new Promise<ReviewTuiResult>((resolve) => {

@@ -1,7 +1,7 @@
-import type { CommandContext, CommandResult } from "./types";
-import { SnapshotError } from "../core/errors";
-import { MetadataStore } from "../infra/metadata/metadata-store";
-import { toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { SnapshotError } from "../core/errors.js";
+import { MetadataStore } from "../infra/metadata/metadata-store.js";
+import { resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 
 const store = new MetadataStore();
 
@@ -15,11 +15,21 @@ function parseBoolean(value: string): boolean {
   throw new SnapshotError("ERR_USAGE", `expected boolean value, got: ${value}`);
 }
 
+function parseList(value: string): string[] {
+  if (value.trim() === "") {
+    return [];
+  }
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 export async function runConfig(context: CommandContext): Promise<CommandResult> {
   const sub = context.positionals[0] ?? "get";
 
   if (sub === "get") {
-    const projectPath = context.positionals[1] ?? context.cwd;
+    const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[1]);
     const config = store.loadConfig(projectPath);
     if (context.useJson) {
       return toJsonResponse(true, "config", { projectPath, config });
@@ -32,7 +42,7 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
   if (sub === "set") {
     const key = context.positionals[1];
     const value = context.positionals[2];
-    const projectPath = context.positionals[3] ?? context.cwd;
+    const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[3]);
     if (!key || value === undefined) {
       throw new SnapshotError("ERR_USAGE", "config set requires: <key> <value> [project-path]");
     }
@@ -48,6 +58,17 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
         throw new SnapshotError("ERR_USAGE", `invalid fallbackPolicy: ${value}`);
       }
       config.workspace.fallbackPolicy = value as "best-available" | "error";
+    } else if (key === "workspace.include") {
+      config.workspace.include = parseList(value);
+    } else if (key === "workspace.exclude") {
+      config.workspace.exclude = parseList(value);
+    } else if (key === "workspace.symlink") {
+      config.workspace.symlink = parseList(value);
+    } else if (key === "workspace.symlinkMode") {
+      if (!["shared-live", "safety-restricted"].includes(value)) {
+        throw new SnapshotError("ERR_USAGE", `invalid symlinkMode: ${value}`);
+      }
+      config.workspace.symlinkMode = value as "shared-live" | "safety-restricted";
     } else if (key === "merge.autoCommit") {
       config.merge.autoCommit = parseBoolean(value);
     } else if (key === "merge.stopOnConflict") {

@@ -1,9 +1,13 @@
-import type { CommandContext, CommandResult } from "./types";
-import { assertPositional, flagString, toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { MetadataStore } from "../infra/metadata/metadata-store.js";
+import { assertPositional, flagString, toJsonResponse } from "./utils.js";
+
+const store = new MetadataStore();
 
 export async function runMerge(context: CommandContext): Promise<CommandResult> {
   const workspaceRef = assertPositional(context.positionals, 0, "workspace-ref");
-  const projectPath = assertPositional(context.positionals, 1, "project-path");
+  const projectPath =
+    context.positionals[1] ?? store.resolveWorkspaceRef(workspaceRef, context.cwd).projectPath;
   const preferFlag = flagString(context.flags, "prefer");
   const prefer = preferFlag === "virtual" || preferFlag === "target" ? preferFlag : undefined;
   const commit =

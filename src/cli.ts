@@ -1,10 +1,10 @@
-#!/usr/bin/env node
-import { executeCommand, type CommandName } from "./commands";
-import { BackendService } from "./core/services/backend-service";
-import { MergeService } from "./core/services/merge-service";
-import { RevertService } from "./core/services/revert-service";
-import { ReviewService } from "./core/services/review-service";
-import { WorkspaceService } from "./core/services/workspace-service";
+#!/usr/bin/env bun
+import { executeCommand, type CommandName } from "./commands/index.js";
+import { BackendService } from "./core/services/backend-service.js";
+import { MergeService } from "./core/services/merge-service.js";
+import { RevertService } from "./core/services/revert-service.js";
+import { ReviewService } from "./core/services/review-service.js";
+import { WorkspaceService } from "./core/services/workspace-service.js";
 
 interface ParsedArgs {
   command?: CommandName;
@@ -58,14 +58,14 @@ function usage(): string {
     "snapshot - git-only multi-agent workspace tool",
     "",
     "Commands:",
-    "  snapshot init <project-path> [--force]",
-    "  snapshot spawn <project-path> <workspace-path> [--agent <id>] [--label <name>] [--from <ref>] [--backend auto|worktree|apfs-cow|overlay] [--strict-backend]",
+    "  snapshot init [project-path] [--force]",
+    "  snapshot spawn [project-path] <workspace-path> [--agent <id>] [--label <name>] [--from <ref>] [--backend auto|worktree|apfs-cow|overlay] [--strict-backend]",
     "  snapshot list [project-path]",
     "  snapshot status <workspace-path|workspace-id>",
     "  snapshot diff <workspace-path|workspace-id> [--name-only|--patch|--stat] [--base <sha>]",
     "  snapshot review <workspace-ref> [--reviewer <id>] [--export <path>] [--readonly] [--approve-all]",
-    "  snapshot merge <workspace-ref> <project-path> [--target <branch>] [--prefer <virtual|target>] [--commit|--no-commit] [--message <text>]",
-    "  snapshot merge-many <project-path> --from <refs> [--order <created|priority|manual>] [--continue-on-conflict] [--preflight] [--commit|--no-commit] [--report <path>]",
+    "  snapshot merge <workspace-ref> [project-path] [--target <branch>] [--prefer <virtual|target>] [--commit|--no-commit] [--message <text>]",
+    "  snapshot merge-many [project-path] --from <refs> [--order <created|priority|manual>] [--continue-on-conflict] [--preflight] [--commit|--no-commit] [--report <path>]",
     "  snapshot cleanup <workspace-ref> [--delete-branch] [--force]",
     "  snapshot cleanup [project-path] --all-archived",
     "  snapshot unlock [project-path] --force",

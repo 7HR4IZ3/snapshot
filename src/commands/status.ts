@@ -1,5 +1,5 @@
-import type { CommandContext, CommandResult } from "./types";
-import { assertPositional, toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { assertPositional, toJsonResponse } from "./utils.js";
 
 export async function runStatus(context: CommandContext): Promise<CommandResult> {
   const workspaceRef = assertPositional(context.positionals, 0, "workspace-ref");

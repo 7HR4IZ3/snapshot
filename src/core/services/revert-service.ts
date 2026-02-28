@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
-import { SnapshotError } from "../errors";
-import { GitService } from "../../infra/git/git-service";
-import { MetadataStore } from "../../infra/metadata/metadata-store";
+import { SnapshotError } from "../errors.js";
+import { GitService } from "../../infra/git/git-service.js";
+import { MetadataStore } from "../../infra/metadata/metadata-store.js";
 
 export interface RevertInput {
   projectPath: string;

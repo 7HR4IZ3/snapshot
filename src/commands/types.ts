@@ -1,9 +1,9 @@
-import type { JsonResponse } from "../core/domain/common";
-import { BackendService } from "../core/services/backend-service";
-import { MergeService } from "../core/services/merge-service";
-import { RevertService } from "../core/services/revert-service";
-import { ReviewService } from "../core/services/review-service";
-import { WorkspaceService } from "../core/services/workspace-service";
+import type { JsonResponse } from "../core/domain/common.js";
+import { BackendService } from "../core/services/backend-service.js";
+import { MergeService } from "../core/services/merge-service.js";
+import { RevertService } from "../core/services/revert-service.js";
+import { ReviewService } from "../core/services/review-service.js";
+import { WorkspaceService } from "../core/services/workspace-service.js";
 
 export interface CommandContext {
   cwd: string;

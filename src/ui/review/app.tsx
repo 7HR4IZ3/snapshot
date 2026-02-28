@@ -1,8 +1,8 @@
 import React, { useMemo, useState, type JSX } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import type { ReviewDecision } from "../../core/domain/review";
-import { REVIEW_KEYMAP } from "./keymap";
-import { createInitialReviewState } from "./state";
+import type { ReviewDecision } from "../../core/domain/review.js";
+import { REVIEW_KEYMAP } from "./keymap.js";
+import { createInitialReviewState } from "./state.js";
 
 export interface ReviewTuiFile {
   path: string;

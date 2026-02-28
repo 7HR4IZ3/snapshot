@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
-import type { CommandContext, CommandResult } from "./types";
-import { SnapshotError } from "../core/errors";
-import { LockService } from "../infra/lock/lock-service";
-import { MetadataStore } from "../infra/metadata/metadata-store";
-import { toJsonResponse } from "./utils";
+import type { CommandContext, CommandResult } from "./types.js";
+import { SnapshotError } from "../core/errors.js";
+import { LockService } from "../infra/lock/lock-service.js";
+import { MetadataStore } from "../infra/metadata/metadata-store.js";
+import { toJsonResponse } from "./utils.js";
 
 const locks = new LockService();
 const store = new MetadataStore();
