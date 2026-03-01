@@ -8,4 +8,9 @@ export const REVIEW_KEYMAP = {
   note: "m",
   save: "s",
   quit: "q",
+  nextTab: "l",
+  prevTab: "h",
+  filter: "f",
+  approveAll: "A",
+  rejectAll: "R",
 } as const;

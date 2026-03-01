@@ -15,6 +15,15 @@ export interface ReviewInput {
   approveAll?: boolean;
 }
 
+export interface MultiWorkspaceReviewInput {
+  projectPath: string;
+  cwd: string;
+  reviewerId?: string;
+  exportPath?: string;
+  readonly?: boolean;
+  approveAll?: boolean;
+}
+
 interface ParsedReviewPatch {
   path: string;
   hunks: string[];
@@ -181,13 +190,18 @@ export class ReviewService {
     }
 
     const startedAt = new Date().toISOString();
-    const result = await runReviewTui(
-      changes.map((change) => ({
-        path: change.path,
-        status: change.status,
-        hunks: hunkMap.get(change.path) ?? ["No hunks available."],
-      })),
-    );
+    const workspaces = [
+      {
+        workspaceId: workspace.workspaceId,
+        workspaceLabel: workspace.label ?? workspace.workspaceId,
+        files: changes.map((change) => ({
+          path: change.path,
+          status: change.status,
+          hunks: hunkMap.get(change.path) ?? ["No hunks available."],
+        })),
+      },
+    ];
+    const result = await runReviewTui(workspaces);
 
     if (!result.save) {
       return {
@@ -198,7 +212,9 @@ export class ReviewService {
     }
 
     const files: ReviewFileRecord[] = changes.map((change) => {
-      const selected = result.decisions.find((item) => item.path === change.path);
+      const selected = result.decisions.find(
+        (item) => item.workspaceId === workspace.workspaceId && item.path === change.path,
+      );
       const decision: ReviewDecision = selected?.decision ?? "unreviewed";
       return {
         path: change.path,
@@ -240,5 +256,154 @@ export class ReviewService {
     const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
     const random = Math.random().toString(36).slice(2, 6);
     return `rv_${stamp}_${random}`;
+  }
+
+  async reviewAll(input: MultiWorkspaceReviewInput): Promise<{ saved: boolean; records: ReviewRecord[]; preview: unknown }> {
+    const projectPath = input.projectPath || this.store.findProjectFromCwd(input.cwd);
+    const workspaceRecords = this.store.listWorkspaceRecords(projectPath).filter((ws) => ws.status === "active");
+
+    if (workspaceRecords.length === 0) {
+      throw new SnapshotError("ERR_NO_ACTIVE_WORKSPACES", "No active workspaces found to review");
+    }
+
+    const workspaces: Array<{
+      workspaceId: string;
+      workspaceLabel: string;
+      files: Array<{ path: string; status: string; hunks: string[] }>;
+    }> = [];
+
+    const preview: Array<{ workspaceId: string; workspaceLabel: string; files: Array<{ path: string; status: string; hunkCount: number }> }> = [];
+
+    for (const ws of workspaceRecords) {
+      const changes = this.git.diffNameStatus(ws.workspacePath, ws.baseCommit);
+      const patch = this.git.diffPatch(ws.workspacePath, ws.baseCommit);
+      const parsedPatch = parsePatchByFile(patch);
+      const hunkMap = new Map(parsedPatch.map((item) => [item.path, item.hunks]));
+
+      workspaces.push({
+        workspaceId: ws.workspaceId,
+        workspaceLabel: ws.label ?? ws.workspaceId,
+        files: changes.map((change) => ({
+          path: change.path,
+          status: change.status,
+          hunks: hunkMap.get(change.path) ?? ["No hunks available."],
+        })),
+      });
+
+      preview.push({
+        workspaceId: ws.workspaceId,
+        workspaceLabel: ws.label ?? ws.workspaceId,
+        files: changes.map((change) => ({
+          path: change.path,
+          status: change.status,
+          hunkCount: hunkMap.get(change.path)?.length ?? 0,
+        })),
+      });
+    }
+
+    if (input.readonly) {
+      return {
+        saved: false,
+        records: [],
+        preview,
+      };
+    }
+
+    if (input.approveAll) {
+      const startedAt = new Date().toISOString();
+      const records: ReviewRecord[] = [];
+
+      for (const ws of workspaceRecords) {
+        const changes = this.git.diffNameStatus(ws.workspacePath, ws.baseCommit);
+        const files: ReviewFileRecord[] = changes.map((change) => ({
+          path: change.path,
+          status: change.status,
+          decision: "approved" as ReviewDecision,
+          notes: [],
+        }));
+
+        const reviewId = this.nextReviewId();
+        const record: ReviewRecord = {
+          version: 1,
+          reviewId,
+          workspaceId: ws.workspaceId,
+          reviewerId: input.reviewerId ?? null,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          overallDecision: deriveOverall(files),
+          files,
+        };
+
+        this.store.writeReviewRecord(ws.projectPath, record);
+        ws.lastReviewId = record.reviewId;
+        this.store.writeWorkspaceRecord(ws.projectPath, ws);
+        records.push(record);
+      }
+
+      return {
+        saved: true,
+        records,
+        preview,
+      };
+    }
+
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new SnapshotError(
+        "ERR_REVIEW_TTY_REQUIRED",
+        "interactive review requires TTY; use --readonly or --approve-all for non-interactive environments",
+      );
+    }
+
+    const startedAt = new Date().toISOString();
+    const result = await runReviewTui(workspaces);
+
+    if (!result.save) {
+      return {
+        saved: false,
+        records: [],
+        preview,
+      };
+    }
+
+    const records: ReviewRecord[] = [];
+
+    for (const ws of workspaceRecords) {
+      const changes = this.git.diffNameStatus(ws.workspacePath, ws.baseCommit);
+      const files: ReviewFileRecord[] = changes.map((change) => {
+        const selected = result.decisions.find(
+          (item) => item.workspaceId === ws.workspaceId && item.path === change.path,
+        );
+        const decision: ReviewDecision = selected?.decision ?? "unreviewed";
+        return {
+          path: change.path,
+          status: change.status,
+          decision,
+          notes: selected?.note ? [{ message: selected.note }] : [],
+        };
+      });
+
+      const reviewId = this.nextReviewId();
+      const record: ReviewRecord = {
+        version: 1,
+        reviewId,
+        workspaceId: ws.workspaceId,
+        reviewerId: input.reviewerId ?? null,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        overallDecision: deriveOverall(files),
+        files,
+      };
+
+      this.store.writeReviewRecord(ws.projectPath, record);
+      ws.lastReviewId = record.reviewId;
+      this.store.writeWorkspaceRecord(ws.projectPath, ws);
+      records.push(record);
+    }
+
+    return {
+      saved: true,
+      records,
+      preview,
+    };
   }
 }
