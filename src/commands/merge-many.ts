@@ -38,7 +38,8 @@ export async function runMergeMany(context: CommandContext): Promise<CommandResu
   }
 
   const preferFlag = flagString(context.flags, "prefer");
-  const prefer = preferFlag === "virtual" || preferFlag === "target" ? preferFlag : undefined;
+  const prefer =
+    preferFlag === "virtual" || preferFlag === "target" || preferFlag === "none" ? preferFlag : undefined;
 
   const session = context.mergeService.mergeMany({
     projectPath,

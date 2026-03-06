@@ -283,7 +283,7 @@ export function defaultConfig(projectPath: string): SnapshotConfig {
       symlinkMode: "shared-live",
     },
     merge: {
-      prefer: "virtual",
+      prefer: "none",
       autoCommit: true,
       stopOnConflict: true,
       allowBinaryAutoResolve: false,

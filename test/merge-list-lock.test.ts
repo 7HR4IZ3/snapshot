@@ -381,6 +381,27 @@ describe("snapshot merge/list/lock", () => {
     expect(listJson.data.workspaces[0]?.status).toBe("merged");
   }, 20000);
 
+  test("merge with prefer none reports conflict instead of overriding", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-conflict-none`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, workspace], cliRoot).code).toBe(0);
+
+    writeFileSync(join(workspace, "hello.txt"), "workspace version\n", "utf8");
+    expectGitOk(["add", "."], workspace);
+    expectGitOk(["commit", "-m", "workspace conflicting change"], workspace);
+
+    writeFileSync(join(repo, "hello.txt"), "project version\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "project conflicting change"], repo);
+
+    const merge = runSnapshot(["merge", workspace, repo, "--prefer", "none", "--json"], cliRoot);
+    expect(merge.code).toBe(3);
+    expect(merge.stdout).toContain("ERR_MERGE_CONFLICT");
+  }, 20000);
+
   test("merge respects lock and exits with code 4", () => {
     const cliRoot = process.cwd();
     const repo = setupRepo();

@@ -2,6 +2,8 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { JsonError, JsonResponse } from "../core/domain/common.js";
 import { SnapshotError } from "../core/errors.js";
+import { ConflictService } from "../core/services/conflict-service.js";
+import { MetadataStore } from "../infra/metadata/metadata-store.js";
 import type { CommandContext, CommandResult } from "./types.js";
 import { toJsonResponse, flagString } from "./utils.js";
 import { runInit } from "./init.js";
@@ -48,6 +50,7 @@ function printResult(result: CommandResult): void {
 }
 
 export async function executeCommand(command: CommandName, context: CommandContext): Promise<void> {
+  const conflictService = new ConflictService();
   try {
     let result: CommandResult;
     switch (command) {
@@ -134,6 +137,43 @@ export async function executeCommand(command: CommandName, context: CommandConte
         writeFileSync(fullPath, `${JSON.stringify(snapshotError.details, null, 2)}\n`, "utf8");
         if (!context.useJson) {
           console.error(`Report: ${fullPath}`);
+        }
+      }
+    }
+
+    if (snapshotError.code === "ERR_MERGE_CONFLICT" && !context.useJson && snapshotError.details) {
+      const maybeProjectPath = snapshotError.details.projectPath;
+      if (typeof maybeProjectPath === "string") {
+        const entries = snapshotError.details.entries as Array<{ workspaceId: string; workspaceBranch: string; result: string; unresolvedConflicts: Array<{ path: string }> }> | undefined;
+        const isMergeMany = entries && entries.length > 1;
+        
+        if (isMergeMany && entries) {
+          const conflictedEntries = entries.filter(e => e.result === "conflict");
+          if (conflictedEntries.length > 0) {
+            const store = new MetadataStore();
+            const workspaces = conflictedEntries.map((entry) => {
+              const record = store.loadWorkspaceRecord(maybeProjectPath, entry.workspaceId);
+              return {
+                workspaceId: entry.workspaceId,
+                workspacePath: record?.workspacePath || "",
+                label: record?.label || entry.workspaceId,
+              };
+            });
+            
+            const handled = await conflictService.handleMultiWorkspaceConflicts(maybeProjectPath, workspaces);
+            if (handled.resolved) {
+              console.log("Conflicts resolved and staged. Complete the merge with git commit.");
+              return;
+            }
+            console.error(`Unresolved conflicts remaining: ${handled.unresolvedPaths.length}`);
+          }
+        } else {
+          const handled = await conflictService.handleConflictFromError(maybeProjectPath, snapshotError.details);
+          if (handled.unresolved.length === 0) {
+            console.log("Conflicts resolved and staged. Complete the merge with git commit.");
+            return;
+          }
+          console.error(`Unresolved conflicts remaining: ${handled.unresolved.length}`);
         }
       }
     }

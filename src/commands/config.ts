@@ -69,6 +69,11 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
         throw new SnapshotError("ERR_USAGE", `invalid symlinkMode: ${value}`);
       }
       config.workspace.symlinkMode = value as "shared-live" | "safety-restricted";
+    } else if (key === "merge.prefer") {
+      if (!["none", "virtual", "target"].includes(value)) {
+        throw new SnapshotError("ERR_USAGE", `invalid merge.prefer: ${value}`);
+      }
+      config.merge.prefer = value as "none" | "virtual" | "target";
     } else if (key === "merge.autoCommit") {
       config.merge.autoCommit = parseBoolean(value);
     } else if (key === "merge.stopOnConflict") {

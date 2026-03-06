@@ -1,4 +1,4 @@
-export type MergePrefer = "virtual" | "target";
+export type MergePrefer = "virtual" | "target" | "none";
 export type MergeOrder = "created" | "priority" | "manual";
 
 export type MergeEntryResult = "merged" | "conflict" | "failed" | "skipped";

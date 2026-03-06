@@ -143,6 +143,7 @@ export class MergeService {
 
       if (mergeOne.conflict) {
         throw new SnapshotError("ERR_MERGE_CONFLICT", "merge produced unresolved conflicts", {
+          projectPath,
           workspaceId: workspace.workspaceId,
           conflicts: mergeOne.entry.unresolvedConflicts,
           mergeSessionId: sessionId,
@@ -238,6 +239,7 @@ export class MergeService {
 
       if (shouldThrowConflict || (hasConflict && !continueOnConflict)) {
         throw new SnapshotError("ERR_MERGE_CONFLICT", "merge-many stopped due to conflict", {
+          projectPath,
           mergeSessionId: sessionId,
           entries,
         });

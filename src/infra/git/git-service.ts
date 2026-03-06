@@ -34,7 +34,7 @@ function runGitRaw(args: string[], cwd?: string): { exitCode: number; stdout: st
 }
 
 export interface MergeOptions {
-  prefer: "virtual" | "target";
+  prefer: "virtual" | "target" | "none";
   commit: boolean;
   message?: string;
 }
@@ -112,8 +112,12 @@ export class GitService {
   }
 
   merge(path: string, sourceBranch: string, options: MergeOptions): MergeAttemptResult {
-    const strategy = options.prefer === "virtual" ? "theirs" : "ours";
-    const args = ["merge", "--no-ff", "-s", "ort", "-X", strategy];
+    const args = ["merge", "--no-ff", "-s", "ort"];
+    if (options.prefer === "virtual") {
+      args.push("-X", "theirs");
+    } else if (options.prefer === "target") {
+      args.push("-X", "ours");
+    }
     if (!options.commit) {
       args.push("--no-commit");
     }

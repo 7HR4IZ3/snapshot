@@ -255,7 +255,7 @@ Purpose:
 Flags:
 
 - `--target <branch>`
-- `--prefer virtual|target`
+- `--prefer none|virtual|target`
 - `--commit`
 - `--no-commit`
 - `--message <text>`
@@ -264,6 +264,13 @@ Behavior notes:
 
 - Auto-checkpoints uncommitted workspace changes before merge.
 - Uses config `merge.autoCommit` if commit flags are omitted.
+- If merge fails with conflicts (human mode, non-JSON, TTY), Snapshot opens conflict UI automatically.
+- Conflict UI shows target vs workspace content side-by-side at the top, and a conflict-free merged preview below.
+- Resolve actions in UI:
+  - `1` keep target
+  - `2` keep workspace
+  - `3` manual
+  - `f` finalize staged choices
 
 ### `snapshot merge-many [project-path] --from <refs> [flags]`
 
@@ -359,6 +366,7 @@ Common keys:
 - `workspace.exclude`
 - `workspace.symlink`
 - `workspace.symlinkMode`
+- `merge.prefer`
 - `merge.autoCommit`
 - `merge.stopOnConflict`
 - `review.requireApprovalBeforeMerge`

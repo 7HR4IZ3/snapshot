@@ -19,7 +19,7 @@ export const snapshotConfigSchema = {
     merge: {
       type: "object",
       properties: {
-        prefer: { type: "string", enum: ["virtual", "target"] },
+        prefer: { type: "string", enum: ["virtual", "target", "none"] },
         autoCommit: { type: "boolean" },
         stopOnConflict: { type: "boolean" },
         allowBinaryAutoResolve: { type: "boolean" },

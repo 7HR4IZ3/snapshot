@@ -16,7 +16,7 @@
     "clean": "rm -rf dist",
     "build": "bun run clean && bunx tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "gen:conflicts": "bun run scripts/generate-conflicts.ts",
-    "test": "bun test test/milestone1.test.ts test/merge-list-lock.test.ts test/merge-many-cleanup.test.ts"
+    "test": "bun test test/milestone1.test.ts test/merge-list-lock.test.ts test/merge-many-cleanup.test.ts test/conflict-ui-model.test.ts"
   },
   "dependencies": {
     "ajv": "^8.18.0",

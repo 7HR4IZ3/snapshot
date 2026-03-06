@@ -9,7 +9,8 @@ export async function runMerge(context: CommandContext): Promise<CommandResult> 
   const projectPath =
     context.positionals[1] ?? store.resolveWorkspaceRef(workspaceRef, context.cwd).projectPath;
   const preferFlag = flagString(context.flags, "prefer");
-  const prefer = preferFlag === "virtual" || preferFlag === "target" ? preferFlag : undefined;
+  const prefer =
+    preferFlag === "virtual" || preferFlag === "target" || preferFlag === "none" ? preferFlag : undefined;
   const commit =
     context.flags.commit === true ? true : context.flags["no-commit"] === true ? false : undefined;
 
