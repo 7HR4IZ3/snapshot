@@ -90,3 +90,38 @@ export const workspaceMarkerSchema = {
   required: ["version", "workspaceId", "projectPath"],
   additionalProperties: false,
 } as const;
+
+export const fileSnapshotRecordSchema = {
+  type: "object",
+  properties: {
+    version: { type: "integer", const: 1 },
+    fileSnapshotId: { type: "string", minLength: 1 },
+    label: { anyOf: [{ type: "string" }, { type: "null" }] },
+    agentId: { anyOf: [{ type: "string" }, { type: "null" }] },
+    projectPath: { type: "string", minLength: 1 },
+    sourcePath: { type: "string", minLength: 1 },
+    repoRelativePath: { type: "string", minLength: 1 },
+    snapshotPath: { type: "string", minLength: 1 },
+    basePath: { type: "string", minLength: 1 },
+    createdAt: { type: "string", minLength: 1 },
+    status: { type: "string", enum: ["active", "merged", "conflicted", "archived"] },
+    pulledAt: { anyOf: [{ type: "string" }, { type: "null" }] },
+    lastError: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+  required: [
+    "version",
+    "fileSnapshotId",
+    "label",
+    "agentId",
+    "projectPath",
+    "sourcePath",
+    "repoRelativePath",
+    "snapshotPath",
+    "basePath",
+    "createdAt",
+    "status",
+    "pulledAt",
+    "lastError",
+  ],
+  additionalProperties: false,
+} as const;

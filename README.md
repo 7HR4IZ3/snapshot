@@ -7,6 +7,7 @@ It is designed for this problem: you want parallel agent output, but you still w
 ## What Snapshot Gives You
 
 - Isolated workspaces per agent.
+- Single-file snapshots for one or many AI-specific temp files.
 - Multiple workspace backends (`worktree`, `apfs-cow`, `overlay`, `auto`).
 - Merge orchestration (`merge`, `merge-many`, `preflight`, reports).
 - Review artifacts (interactive TUI and non-interactive approval mode).
@@ -40,6 +41,7 @@ bun run src/cli.ts --help
 - Project: the canonical git repository.
 - Workspace: a spawned isolated working area associated with an agent.
 - Workspace backend: how workspace files are materialized.
+- File snapshot: a copied single file that can be edited outside the repo and pulled back later.
 - Merge session: recorded result of `merge` or `merge-many`.
 - Review artifact: persisted decision record from `review`.
 
@@ -106,6 +108,15 @@ snapshot diff /path/to/project-agent-a --stat
 
 ```bash
 snapshot merge /path/to/project-agent-a /path/to/project
+```
+
+Single-file flow:
+
+```bash
+snapshot spawn-file /path/to/project src/app.ts /tmp/app.agent-a.ts
+snapshot spawn-file /path/to/project src/app.ts /tmp/app.agent-b.ts
+snapshot pull-file /tmp/app.agent-a.ts /path/to/project
+snapshot pull-all /path/to/project
 ```
 
 ## Workspace Policy: Include, Exclude, Symlink
@@ -202,6 +213,28 @@ Behavior notes:
 - Parent directories for `workspace-path` are created recursively.
 - Policy flags override config for that spawn only.
 
+### `snapshot spawn-file [project-path] <source-file> <snapshot-file> [flags]`
+
+Purpose:
+
+- Create a single-file snapshot copy outside the repo and persist metadata for later pull-in.
+
+Parameters:
+
+- `project-path` optional (resolved from context if omitted).
+- `source-file` required file inside the target project.
+- `snapshot-file` required destination copy path for the AI to edit.
+
+Key flags:
+
+- `--agent <id>`
+- `--label <name>`
+
+Behavior notes:
+
+- Stores a base copy under `.snapshot/file-snapshots/` for later three-way merge checks.
+- You can create multiple snapshots for the same source file.
+
 ### `snapshot list [project-path]`
 
 Purpose:
@@ -295,6 +328,30 @@ Behavior notes:
 
 - stop-on-conflict records remaining entries as `skipped`.
 - preflight mode is non-mutating.
+
+### `snapshot pull-file <snapshot-ref> [project-path] [--force]`
+
+Purpose:
+
+- Pull one file snapshot back into the main repo file.
+
+Behavior notes:
+
+- Accepts a snapshot file path or file snapshot id.
+- If both the repo file and the snapshot changed, Snapshot attempts a three-way text merge.
+- If that merge conflicts, the file snapshot is marked `conflicted`.
+- `--force` overwrites the repo file with snapshot content.
+
+### `snapshot pull-all [project-path] [--force]`
+
+Purpose:
+
+- Pull all active or conflicted file snapshots for a project in created order.
+
+Behavior notes:
+
+- Continues past file-level conflicts and reports per-snapshot results.
+- Useful when you spawned multiple single-file copies for multiple AIs.
 
 ### `snapshot revert [project-path] [flags]`
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { executeCommand, type CommandName } from "./commands/index.js";
 import { BackendService } from "./core/services/backend-service.js";
+import { FileSnapshotService } from "./core/services/file-snapshot-service.js";
 import { MergeService } from "./core/services/merge-service.js";
 import { RevertService } from "./core/services/revert-service.js";
 import { ReviewService } from "./core/services/review-service.js";
@@ -60,12 +61,15 @@ function usage(): string {
     "Commands:",
     "  snapshot init [project-path] [--force]",
     "  snapshot spawn [project-path] <workspace-path> [--agent <id>] [--label <name>] [--from <ref>] [--backend auto|worktree|apfs-cow|overlay] [--strict-backend] [--include <csv-globs>] [--exclude <csv-globs>] [--symlink <csv-globs>] [--symlink-mode shared-live|safety-restricted]",
+    "  snapshot spawn-file [project-path] <source-file> <snapshot-file> [--agent <id>] [--label <name>]",
     "  snapshot list [project-path]",
     "  snapshot status <workspace-path|workspace-id>",
     "  snapshot diff <workspace-path|workspace-id> [--name-only|--patch|--stat] [--base <sha>]",
     "  snapshot review <workspace-ref> [--reviewer <id>] [--export <path>] [--readonly] [--approve-all]",
     "  snapshot merge <workspace-ref> [project-path] [--target <branch>] [--prefer <none|virtual|target>] [--commit|--no-commit] [--message <text>]",
     "  snapshot merge-many [project-path] --from <refs> [--order <created|priority|manual>] [--continue-on-conflict] [--preflight] [--prefer <none|virtual|target>] [--commit|--no-commit] [--report <path>]",
+    "  snapshot pull-file <snapshot-ref> [project-path] [--force]",
+    "  snapshot pull-all [project-path] [--force]",
     "  snapshot cleanup <workspace-ref> [--delete-branch] [--force]",
     "  snapshot cleanup [project-path] --all-archived",
     "  snapshot unlock [project-path] --force",
@@ -113,6 +117,7 @@ async function run(): Promise<void> {
     flags: parsed.flags,
     positionals: parsed.positionals,
     backendService: new BackendService(),
+    fileSnapshotService: new FileSnapshotService(),
     workspaceService: new WorkspaceService(),
     mergeService: new MergeService(),
     revertService: new RevertService(),

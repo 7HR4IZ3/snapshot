@@ -8,12 +8,15 @@ import type { CommandContext, CommandResult } from "./types.js";
 import { toJsonResponse, flagString } from "./utils.js";
 import { runInit } from "./init.js";
 import { runSpawn } from "./spawn.js";
+import { runSpawnFile } from "./spawn-file.js";
 import { runList } from "./list.js";
 import { runStatus } from "./status.js";
 import { runDiff } from "./diff.js";
 import { runReview } from "./review.js";
 import { runMerge } from "./merge.js";
 import { runMergeMany } from "./merge-many.js";
+import { runPullFile } from "./pull-file.js";
+import { runPullAll } from "./pull-all.js";
 import { runCleanup } from "./cleanup.js";
 import { runUnlock } from "./unlock.js";
 import { runRevert } from "./revert.js";
@@ -25,12 +28,15 @@ import { runDoctor } from "./doctor.js";
 export type CommandName =
   | "init"
   | "spawn"
+  | "spawn-file"
   | "list"
   | "status"
   | "diff"
   | "review"
   | "merge"
   | "merge-many"
+  | "pull-file"
+  | "pull-all"
   | "cleanup"
   | "unlock"
   | "revert"
@@ -60,6 +66,9 @@ export async function executeCommand(command: CommandName, context: CommandConte
       case "spawn":
         result = await runSpawn(context);
         break;
+      case "spawn-file":
+        result = await runSpawnFile(context);
+        break;
       case "list":
         result = await runList(context);
         break;
@@ -77,6 +86,12 @@ export async function executeCommand(command: CommandName, context: CommandConte
         break;
       case "merge-many":
         result = await runMergeMany(context);
+        break;
+      case "pull-file":
+        result = await runPullFile(context);
+        break;
+      case "pull-all":
+        result = await runPullAll(context);
         break;
       case "cleanup":
         result = await runCleanup(context);
@@ -178,7 +193,11 @@ export async function executeCommand(command: CommandName, context: CommandConte
       }
     }
 
-    if (snapshotError.code === "ERR_MERGE_CONFLICT" || snapshotError.code === "ERR_REVERT_CONFLICT") {
+    if (
+      snapshotError.code === "ERR_MERGE_CONFLICT" ||
+      snapshotError.code === "ERR_REVERT_CONFLICT" ||
+      snapshotError.code === "ERR_FILE_SNAPSHOT_CONFLICT"
+    ) {
       process.exit(3);
       return;
     }

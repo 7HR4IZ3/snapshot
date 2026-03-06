@@ -1,6 +1,9 @@
 import { createRequire } from "node:module";
 import type { ErrorObject } from "ajv";
 import type {
+  FileSnapshotRecord,
+} from "../../core/domain/file-snapshot.js";
+import type {
   SnapshotConfig,
   WorkspaceMarker,
   WorkspaceRecord,
@@ -8,6 +11,7 @@ import type {
 import { SnapshotError } from "../../core/errors.js";
 import {
   snapshotConfigSchema,
+  fileSnapshotRecordSchema,
   workspaceMarkerSchema,
   workspaceRecordSchema,
 } from "./schemas.js";
@@ -32,6 +36,9 @@ const validateWorkspace = ajv.compile<WorkspaceRecord>(
 );
 const validateMarker = ajv.compile<WorkspaceMarker>(
   workspaceMarkerSchema as object,
+);
+const validateFileSnapshot = ajv.compile<FileSnapshotRecord>(
+  fileSnapshotRecordSchema as object,
 );
 
 function formatErrors(errors: ErrorObject[] | null | undefined): string {
@@ -72,6 +79,17 @@ export function assertValidWorkspaceMarker(
     throw new SnapshotError(
       "ERR_INVALID_WORKSPACE_MARKER",
       formatErrors(validateMarker.errors),
+    );
+  }
+}
+
+export function assertValidFileSnapshotRecord(
+  data: unknown,
+): asserts data is FileSnapshotRecord {
+  if (!validateFileSnapshot(data)) {
+    throw new SnapshotError(
+      "ERR_INVALID_FILE_SNAPSHOT_RECORD",
+      formatErrors(validateFileSnapshot.errors),
     );
   }
 }

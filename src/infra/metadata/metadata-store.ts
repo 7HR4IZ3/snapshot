@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { FileSnapshotRecord } from "../../core/domain/file-snapshot.js";
 import type {
   SnapshotConfig,
   WorkspaceMarker,
@@ -8,13 +9,19 @@ import type {
 import type { ReviewRecord } from "../../core/domain/review.js";
 import type { MergeSessionRecord } from "../../core/domain/merge.js";
 import { SnapshotError } from "../../core/errors.js";
-import { assertValidConfig, assertValidWorkspaceMarker, assertValidWorkspaceRecord } from "./validator.js";
+import {
+  assertValidConfig,
+  assertValidFileSnapshotRecord,
+  assertValidWorkspaceMarker,
+  assertValidWorkspaceRecord,
+} from "./validator.js";
 
 export const SNAPSHOT_DIR = ".snapshot";
 const WORKSPACES_DIR = "workspaces";
 const REVIEWS_DIR = "reviews";
 const MERGES_DIR = "merges";
 const LOCKS_DIR = "locks";
+const FILE_SNAPSHOTS_DIR = "file-snapshots";
 const CONFIG_FILE = "config.json";
 const WORKSPACE_MARKER_FILE = ".snapshot-workspace.json";
 
@@ -40,6 +47,7 @@ export class MetadataStore {
     mkdirSync(join(root, REVIEWS_DIR), { recursive: true });
     mkdirSync(join(root, MERGES_DIR), { recursive: true });
     mkdirSync(join(root, LOCKS_DIR), { recursive: true });
+    mkdirSync(join(root, FILE_SNAPSHOTS_DIR), { recursive: true });
   }
 
   snapshotRoot(projectPath: string): string {
@@ -68,6 +76,22 @@ export class MetadataStore {
 
   mergeLockPath(projectPath: string): string {
     return join(this.snapshotRoot(projectPath), LOCKS_DIR, "merge.lock");
+  }
+
+  fileSnapshotsRoot(projectPath: string): string {
+    return join(this.snapshotRoot(projectPath), FILE_SNAPSHOTS_DIR);
+  }
+
+  fileSnapshotRecordPath(projectPath: string, fileSnapshotId: string): string {
+    return join(this.fileSnapshotsRoot(projectPath), `${fileSnapshotId}.json`);
+  }
+
+  fileSnapshotBasePath(projectPath: string, fileSnapshotId: string, sourcePath?: string): string {
+    const suffix = sourcePath ? sourcePath.split(".").slice(1).join(".") : "";
+    return join(
+      this.fileSnapshotsRoot(projectPath),
+      `${fileSnapshotId}.base${suffix ? `.${suffix}` : ""}`,
+    );
   }
 
   mergeSessionPath(projectPath: string, sessionId: string): string {
@@ -136,6 +160,28 @@ export class MetadataStore {
     }
     assertValidWorkspaceRecord(raw);
     return raw;
+  }
+
+  writeFileSnapshotRecord(projectPath: string, record: FileSnapshotRecord): void {
+    this.ensureProjectLayout(projectPath);
+    atomicWriteJson(this.fileSnapshotRecordPath(projectPath, record.fileSnapshotId), record);
+  }
+
+  loadFileSnapshotRecord(projectPath: string, fileSnapshotId: string): FileSnapshotRecord {
+    const raw = readJson(this.fileSnapshotRecordPath(projectPath, fileSnapshotId));
+    assertValidFileSnapshotRecord(raw);
+    return raw;
+  }
+
+  listFileSnapshotRecords(projectPath: string): FileSnapshotRecord[] {
+    const root = this.fileSnapshotsRoot(projectPath);
+    if (!existsSync(root)) {
+      return [];
+    }
+
+    return readdirSync(root)
+      .filter((name) => name.endsWith(".json") && !name.includes(".base."))
+      .map((name) => this.loadFileSnapshotRecord(projectPath, name.replace(/\.json$/, "")));
   }
 
   listWorkspaceRecords(projectPath: string): WorkspaceRecord[] {
@@ -230,6 +276,27 @@ export class MetadataStore {
     const cwdWorkspaceMarker = this.findWorkspaceMarkerFromCwd(cwd);
     const projectPath = cwdWorkspaceMarker ? cwdWorkspaceMarker.projectPath : this.findProjectFromCwd(cwd);
     return { projectPath, workspaceId: ref };
+  }
+
+  resolveFileSnapshotRef(projectPath: string, ref: string, cwd: string): FileSnapshotRecord {
+    const resolvedProjectPath = resolve(projectPath);
+    const maybePath = resolve(cwd, ref);
+    const records = this.listFileSnapshotRecords(resolvedProjectPath);
+
+    const byPath = records.find((record) => resolve(record.snapshotPath) === maybePath);
+    if (byPath) {
+      return byPath;
+    }
+
+    const byId = records.find((record) => record.fileSnapshotId === ref);
+    if (byId) {
+      return byId;
+    }
+
+    throw new SnapshotError("ERR_METADATA_NOT_FOUND", "could not resolve file snapshot reference", {
+      projectPath: resolvedProjectPath,
+      ref,
+    });
   }
 
   findWorkspaceMarkerFromCwd(cwd: string): WorkspaceMarker | null {

@@ -45,6 +45,12 @@ export interface MergeAttemptResult {
   stderr: string;
 }
 
+export interface MergeFileAttemptResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
 export interface PorcelainEntry {
   x: string;
   y: string;
@@ -136,6 +142,19 @@ export class GitService {
         stderr: attempt.stderr,
       });
     }
+  }
+
+  mergeFile(currentPath: string, basePath: string, otherPath: string): MergeFileAttemptResult {
+    const proc = Bun.spawnSync({
+      cmd: ["git", "merge-file", "-p", currentPath, basePath, otherPath],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return {
+      exitCode: proc.exitCode,
+      stdout: proc.stdout.toString(),
+      stderr: proc.stderr.toString(),
+    };
   }
 
   revert(path: string, commitSha: string, options?: { mainline?: number; noCommit?: boolean }): MergeAttemptResult {
