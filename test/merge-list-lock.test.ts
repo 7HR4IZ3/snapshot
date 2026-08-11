@@ -233,6 +233,47 @@ describe("snapshot merge/list/lock", () => {
     expect(existsSync(join(workspace, "legacy", "spawned-a"))).toBe(false);
   }, 20000);
 
+  test("essential workspaces skip gitignored and common derived paths by default", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-essential`;
+    const workspaceWithDependency = `${repo}-workspace-essential-include`;
+
+    writeFileSync(join(repo, ".gitignore"), "node_modules/\ncustom-cache/\n", "utf8");
+    mkdirSync(join(repo, "node_modules", "fixture-package"), { recursive: true });
+    mkdirSync(join(repo, "custom-cache"), { recursive: true });
+    mkdirSync(join(repo, "dist"), { recursive: true });
+    mkdirSync(join(repo, "packages", "fixture", "node_modules"), { recursive: true });
+    mkdirSync(join(repo, "src"), { recursive: true });
+    writeFileSync(join(repo, "node_modules", "fixture-package", "index.js"), "module.exports = true;\n", "utf8");
+    writeFileSync(join(repo, "custom-cache", "state.json"), "{}\n", "utf8");
+    writeFileSync(join(repo, "dist", "bundle.js"), "console.log('generated');\n", "utf8");
+    writeFileSync(join(repo, "dist", "checked-in.js"), "console.log('published');\n", "utf8");
+    writeFileSync(join(repo, "packages", "fixture", "node_modules", "nested.js"), "module.exports = true;\n", "utf8");
+    writeFileSync(join(repo, "src", "app.ts"), "export const app = true;\n", "utf8");
+
+    expectGitOk(["add", ".gitignore", "src", "dist/checked-in.js"], repo);
+    expectGitOk(["commit", "-m", "add essential workspace fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+
+    const spawn = runSnapshot(["spawn", repo, workspace, "--json"], cliRoot);
+    expect(spawn.code).toBe(0);
+    expect(existsSync(join(workspace, "src", "app.ts"))).toBe(true);
+    expect(existsSync(join(workspace, ".gitignore"))).toBe(true);
+    expect(existsSync(join(workspace, "node_modules"))).toBe(false);
+    expect(existsSync(join(workspace, "custom-cache"))).toBe(false);
+    expect(existsSync(join(workspace, "dist", "checked-in.js"))).toBe(true);
+    expect(existsSync(join(workspace, "dist", "bundle.js"))).toBe(false);
+    expect(existsSync(join(workspace, "packages", "fixture", "node_modules"))).toBe(false);
+
+    const includedSpawn = runSnapshot(
+      ["spawn", repo, workspaceWithDependency, "--include", "node_modules/**", "--json"],
+      cliRoot,
+    );
+    expect(includedSpawn.code).toBe(0);
+    expect(existsSync(join(workspaceWithDependency, "node_modules", "fixture-package", "index.js"))).toBe(true);
+  }, 20000);
+
   test("apfs-cow symlink patterns support globs with safety modes", () => {
     const cliRoot = process.cwd();
     const repo = setupRepo();

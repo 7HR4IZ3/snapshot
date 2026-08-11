@@ -3,9 +3,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, sy
 import type { WorkspaceBackend, WorkspacePolicy, WorkspaceRecord } from "../domain/workspace.js";
 import {
   HARD_EXCLUDED_WORKSPACE_PATHS,
+  DEFAULT_ESSENTIAL_EXCLUDED_WORKSPACE_PATHS,
   isWorkspacePathAllowed,
   normalizeWorkspacePattern,
   normalizeWorkspacePolicy,
+  workspacePathMayContainMatch,
   workspacePathMatches,
 } from "../domain/workspace-policy.js";
 import { SnapshotError } from "../errors.js";
@@ -121,7 +123,7 @@ export class WorkspaceService {
       symlink: effectiveSymlink,
       symlinkMode: effectiveSymlinkMode,
     });
-    this.applyWorkspaceFilters(workspacePath, policy);
+    this.applyWorkspaceFilters(projectPath, workspacePath, policy);
     if (backend === "apfs-cow" || backend === "overlay") {
       this.applyWorkspaceSymlinks(
         projectPath,
@@ -162,6 +164,7 @@ export class WorkspaceService {
   }
 
   private applyWorkspaceFilters(
+    projectPath: string,
     workspacePath: string,
     policy: WorkspacePolicy,
   ): void {
@@ -186,7 +189,22 @@ export class WorkspaceService {
           continue;
         }
 
+        const explicitlyIncluded = policy.include.length > 0 && (
+          workspacePathMatches(relPath, policy.include) ||
+          (isDir && workspacePathMayContainMatch(relPath, policy.include))
+        );
+        const isDefaultDerivedPath = workspacePathMatches(
+          relPath,
+          DEFAULT_ESSENTIAL_EXCLUDED_WORKSPACE_PATHS,
+        );
+        const isGitIgnored = this.git.isIgnored(projectPath, relPath);
+        const needsTrackedCheck = isDefaultDerivedPath || isGitIgnored;
+        const isTracked = needsTrackedCheck && this.git.isTracked(projectPath, relPath);
+        const shouldSkipByDefault = !isTracked && !explicitlyIncluded &&
+          (isDefaultDerivedPath || isGitIgnored);
+
         if (workspacePathMatches(relPath, policy.exclude) ||
+          shouldSkipByDefault ||
           (!isDir && policy.include.length > 0 && !workspacePathMatches(relPath, policy.include))) {
           rmSync(absPath, { recursive: true, force: true });
           continue;

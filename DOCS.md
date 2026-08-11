@@ -228,6 +228,17 @@ Use `--strict-backend` when fallback is not acceptable.
 
 Patterns use globs. Policies can be set in config or overridden during `spawn`.
 
+New workspaces use an essential-content default. Snapshot keeps tracked project
+files, skips paths ignored by Git, and also skips common dependency, cache, and
+build directories such as `node_modules`, `dist`, `coverage`, `.cache`, and
+`target`. Tracked files are preserved even when their path matches one of the
+fallback derived-directory names.
+
+Use `--include` to opt a normally skipped path back into a workspace. Explicit
+`--exclude` patterns still take precedence. This filtering is especially useful
+with the APFS copy-on-write backend: the workspace starts with the files an
+agent needs without exposing every local dependency and build artifact.
+
 `shared-live` symlinks point at canonical project files, so edits can mutate the project immediately. `safety-restricted` blocks symlinks to tracked paths and allows ignored/generated paths only.
 
 Always-excluded paths cannot be overridden:

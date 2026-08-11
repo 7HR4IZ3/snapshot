@@ -302,6 +302,11 @@ export class GitService {
     });
   }
 
+  isTracked(path: string, relPath: string): boolean {
+    const out = runGitRaw(["ls-files", "--error-unmatch", "--", relPath], path);
+    return out.exitCode === 0 && out.stdout.trim().length > 0;
+  }
+
   fetchLocalBranch(targetRepoPath: string, sourceRepoPath: string, sourceBranch: string, localRef: string): void {
     runGit(["fetch", sourceRepoPath, `${sourceBranch}:${localRef}`], targetRepoPath);
   }

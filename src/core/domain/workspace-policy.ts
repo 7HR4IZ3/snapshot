@@ -16,6 +16,31 @@ export const HARD_EXCLUDED_WORKSPACE_PATHS = [
   "worktrees",
 ];
 
+/**
+ * Derived paths that should not be copied into an essential workspace unless
+ * the user explicitly includes them. Git's ignore rules are checked alongside
+ * this list, so repositories can add their own project-specific generated paths.
+ */
+export const DEFAULT_ESSENTIAL_EXCLUDED_WORKSPACE_PATHS = [
+  "**/node_modules/**",
+  "**/.pnpm-store/**",
+  "**/.yarn/cache/**",
+  "**/.yarn/unplugged/**",
+  "**/.next/**",
+  "**/.nuxt/**",
+  "**/.svelte-kit/**",
+  "**/.turbo/**",
+  "**/.vite/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/coverage/**",
+  "**/.cache/**",
+  "**/.parcel-cache/**",
+  "**/target/**",
+  "**/tmp/**",
+  "**/temp/**",
+];
+
 export function normalizeWorkspacePattern(input: string): string {
   return input.replace(/^\.\//, "").replace(/\/$/, "").trim();
 }
@@ -44,6 +69,27 @@ export function workspacePathMatches(path: string, patterns: string[]): boolean 
       micromatch.isMatch(path, expanded, { dot: true }),
     ),
   );
+}
+
+export function workspacePathMayContainMatch(path: string, patterns: string[]): boolean {
+  const normalizedPath = normalizeWorkspacePattern(path);
+  if (!normalizedPath) {
+    return patterns.length > 0;
+  }
+
+  return patterns.some((pattern) => {
+    const normalizedPattern = normalizeWorkspacePattern(pattern);
+    if (!normalizedPattern) {
+      return false;
+    }
+    if (workspacePathMatches(normalizedPath, [normalizedPattern])) {
+      return true;
+    }
+    if (normalizedPattern.startsWith(`${normalizedPath}/`)) {
+      return true;
+    }
+    return micromatch.isMatch(`${normalizedPath}/.snapshot-probe`, normalizedPattern, { dot: true });
+  });
 }
 
 function pathParts(path: string): string[] {
