@@ -1,8 +1,8 @@
 import type { CommandContext, CommandResult } from "./types.js";
-import { resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { projectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runList(context: CommandContext): Promise<CommandResult> {
-  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
+  const projectPath = projectPathFromContext(context.cwd, context.flags, context.positionals[0]);
   const result = context.workspaceService.list(projectPath, context.cwd);
 
   if (context.useJson) {

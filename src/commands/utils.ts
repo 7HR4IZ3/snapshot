@@ -25,6 +25,21 @@ export function flagString(flags: Record<string, string | boolean>, name: string
   return typeof value === "string" ? value : undefined;
 }
 
+export function projectPathFromContext(
+  cwd: string,
+  flags: Record<string, string | boolean>,
+  legacyPositional?: string,
+): string {
+  const projectFlag = flags.project;
+  if (projectFlag === true || projectFlag === "") {
+    throw new SnapshotError("ERR_USAGE", "--project requires a path");
+  }
+  if (typeof projectFlag === "string" && legacyPositional) {
+    throw new SnapshotError("ERR_USAGE", "provide the project path either as --project <path> or as the legacy positional argument, not both");
+  }
+  return resolveProjectPathFromContext(cwd, typeof projectFlag === "string" ? projectFlag : legacyPositional);
+}
+
 export function assertPositional(positionals: string[], index: number, name: string): string {
   const value = positionals[index];
   if (!value) {

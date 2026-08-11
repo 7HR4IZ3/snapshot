@@ -1,14 +1,12 @@
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
-import { flagString, parseCsvFlag, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { flagString, parseCsvFlag, projectPathFromContext, toJsonResponse } from "./utils.js";
 import type { WorkspaceBackend } from "../core/domain/workspace.js";
 
 export async function runSpawn(context: CommandContext): Promise<CommandResult> {
   const positionals = context.positionals;
-  const projectPath =
-    positionals.length >= 2
-      ? resolveProjectPathFromContext(context.cwd, positionals[0])
-      : resolveProjectPathFromContext(context.cwd);
+  const legacyProjectPath = positionals.length >= 2 ? positionals[0] : undefined;
+  const projectPath = projectPathFromContext(context.cwd, context.flags, legacyProjectPath);
   const workspacePath = positionals.length >= 2 ? positionals[1] : positionals[0];
   if (!workspacePath) {
     throw new SnapshotError("ERR_USAGE", "missing required argument: workspace-path");

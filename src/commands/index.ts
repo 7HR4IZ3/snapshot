@@ -43,7 +43,8 @@ export type CommandName =
   | "backends"
   | "config"
   | "repair-mounts"
-  | "doctor";
+  | "doctor"
+  | "tui";
 
 function printResult(result: CommandResult): void {
   if ("ok" in result) {
@@ -113,6 +114,9 @@ export async function executeCommand(command: CommandName, context: CommandConte
         break;
       case "doctor":
         result = await runDoctor(context);
+        break;
+      case "tui":
+        result = await (await import("./tui.js")).runTui(context);
         break;
       default:
         throw new SnapshotError("ERR_USAGE", `unknown command: ${String(command)}`);

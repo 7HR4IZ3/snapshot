@@ -1,13 +1,11 @@
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
-import { flagString, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { flagString, projectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runSpawnFile(context: CommandContext): Promise<CommandResult> {
   const positionals = context.positionals;
-  const projectPath =
-    positionals.length >= 3
-      ? resolveProjectPathFromContext(context.cwd, positionals[0])
-      : resolveProjectPathFromContext(context.cwd);
+  const legacyProjectPath = positionals.length >= 3 ? positionals[0] : undefined;
+  const projectPath = projectPathFromContext(context.cwd, context.flags, legacyProjectPath);
   const sourcePath = positionals.length >= 3 ? positionals[1] : positionals[0];
   const snapshotPath = positionals.length >= 3 ? positionals[2] : positionals[1];
 

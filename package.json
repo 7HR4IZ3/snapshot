@@ -16,18 +16,16 @@
     "clean": "rm -rf dist",
     "build": "bun run clean && bunx tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "gen:conflicts": "bun run scripts/generate-conflicts.ts",
-    "test": "bun test test/milestone1.test.ts test/merge-list-lock.test.ts test/merge-many-cleanup.test.ts test/conflict-ui-model.test.ts test/file-snapshot.test.ts"
+    "test": "bun test test/milestone1.test.ts test/merge-list-lock.test.ts test/merge-many-cleanup.test.ts test/conflict-ui-model.test.ts test/file-snapshot.test.ts test/tui-command.test.ts"
   },
   "dependencies": {
+    "@opentui/core": "^0.5.1",
     "ajv": "^8.18.0",
-    "ink": "^6.8.0",
-    "micromatch": "^4.0.8",
-    "react": "^19.2.4"
+    "micromatch": "^4.0.8"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/micromatch": "^4.0.10",
-    "@types/react": "^19.2.14"
+    "@types/micromatch": "^4.0.10"
   },
   "peerDependencies": {
     "typescript": "^5"

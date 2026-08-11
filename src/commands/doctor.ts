@@ -2,13 +2,13 @@ import { existsSync } from "node:fs";
 import type { CommandContext, CommandResult } from "./types.js";
 import { GitService } from "../infra/git/git-service.js";
 import { MetadataStore } from "../infra/metadata/metadata-store.js";
-import { resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { projectPathFromContext, toJsonResponse } from "./utils.js";
 
 const git = new GitService();
 const store = new MetadataStore();
 
 export async function runDoctor(context: CommandContext): Promise<CommandResult> {
-  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
+  const projectPath = projectPathFromContext(context.cwd, context.flags, context.positionals[0]);
   const inspection = context.backendService.inspect(projectPath);
   const isGitRepo = inspection.project?.isGitRepo === true;
   const isSnapshotInitialized = inspection.project?.isSnapshotInitialized === true;

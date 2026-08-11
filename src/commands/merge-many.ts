@@ -2,10 +2,10 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
-import { flagString, parseCsvFlag, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { flagString, parseCsvFlag, projectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runMergeMany(context: CommandContext): Promise<CommandResult> {
-  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
+  const projectPath = projectPathFromContext(context.cwd, context.flags, context.positionals[0]);
 
   const refs = parseCsvFlag(flagString(context.flags, "from"));
   if (refs.length === 0) {
