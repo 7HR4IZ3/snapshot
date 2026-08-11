@@ -328,6 +328,7 @@ Behavior notes:
 
 - stop-on-conflict records remaining entries as `skipped`.
 - preflight mode is non-mutating.
+- `--no-commit` is limited to one workspace; multi-workspace merges need commits so each entry can be tracked and reverted safely.
 
 ### `snapshot pull-file <snapshot-ref> [project-path] [--force]`
 
@@ -426,6 +427,8 @@ Common keys:
 - `merge.prefer`
 - `merge.autoCommit`
 - `merge.stopOnConflict`
+- `merge.allowBinaryAutoResolve`
+- `merge.defaultOrder`
 - `review.requireApprovalBeforeMerge`
 
 ## Examples by Scenario
@@ -503,3 +506,4 @@ Specs live in `spec/`.
 
 - merge applies but no merge commit created
   - Check `merge.autoCommit`, and command flags `--commit`/`--no-commit`.
+  - A single `--no-commit` merge remains a manual Git merge; commit it before using Snapshot revert.

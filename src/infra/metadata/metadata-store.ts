@@ -6,6 +6,7 @@ import type {
   WorkspaceMarker,
   WorkspaceRecord,
 } from "../../core/domain/workspace.js";
+import { HARD_EXCLUDED_WORKSPACE_PATHS } from "../../core/domain/workspace-policy.js";
 import type { ReviewRecord } from "../../core/domain/review.js";
 import type { MergeSessionRecord } from "../../core/domain/merge.js";
 import { SnapshotError } from "../../core/errors.js";
@@ -26,7 +27,7 @@ const CONFIG_FILE = "config.json";
 const WORKSPACE_MARKER_FILE = ".snapshot-workspace.json";
 
 function atomicWriteJson(path: string, data: unknown): void {
-  const tempPath = `${path}.tmp`;
+  const tempPath = `${path}.tmp-${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   writeFileSync(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   renameSync(tempPath, path);
 }
@@ -117,33 +118,12 @@ export class MetadataStore {
 
   loadConfig(projectPath: string): SnapshotConfig {
     const raw = readJson(this.configPath(projectPath)) as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(raw, "workspace")) {
-      raw.workspace = {
-        backendDefault: "auto",
-        fallbackPolicy: "best-available",
-        include: [],
-        exclude: [],
-        symlink: [],
-        symlinkMode: "shared-live",
-      };
-    }
-    const workspace = raw.workspace as Record<string, unknown> | undefined;
-    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "include")) {
-      workspace.include = [];
-    }
-    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "exclude")) {
-      workspace.exclude = [];
-    }
-    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "symlink")) {
-      workspace.symlink = [];
-    }
-    if (workspace && !Object.prototype.hasOwnProperty.call(workspace, "symlinkMode")) {
-      workspace.symlinkMode = "shared-live";
-    }
-    const merge = raw.merge as Record<string, unknown> | undefined;
-    if (merge && !Object.prototype.hasOwnProperty.call(merge, "autoCommit")) {
-      merge.autoCommit = true;
-    }
+    const defaults = defaultConfig(projectPath);
+    raw.version ??= defaults.version;
+    raw.projectPath ??= defaults.projectPath;
+    raw.workspace = { ...defaults.workspace, ...(raw.workspace as Record<string, unknown> | undefined) };
+    raw.merge = { ...defaults.merge, ...(raw.merge as Record<string, unknown> | undefined) };
+    raw.review = { ...defaults.review, ...(raw.review as Record<string, unknown> | undefined) };
     assertValidConfig(raw);
     return raw;
   }
@@ -157,6 +137,14 @@ export class MetadataStore {
     const raw = readJson(this.workspaceRecordPath(projectPath, workspaceId)) as Record<string, unknown>;
     if (!Object.prototype.hasOwnProperty.call(raw, "backend")) {
       raw.backend = "worktree";
+    }
+    if (!Object.prototype.hasOwnProperty.call(raw, "policy")) {
+      raw.policy = {
+        include: [],
+        exclude: [...HARD_EXCLUDED_WORKSPACE_PATHS],
+        symlink: [],
+        symlinkMode: "shared-live",
+      };
     }
     assertValidWorkspaceRecord(raw);
     return raw;

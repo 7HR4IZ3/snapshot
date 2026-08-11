@@ -1,9 +1,8 @@
-import { resolve } from "node:path";
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
 import { LockService } from "../infra/lock/lock-service.js";
 import { MetadataStore } from "../infra/metadata/metadata-store.js";
-import { toJsonResponse } from "./utils.js";
+import { resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 
 const locks = new LockService();
 const store = new MetadataStore();
@@ -13,7 +12,7 @@ export async function runUnlock(context: CommandContext): Promise<CommandResult>
     throw new SnapshotError("ERR_USAGE", "unlock requires --force");
   }
 
-  const projectPath = resolve(context.positionals[0] ?? context.cwd);
+  const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[0]);
   const lockPath = store.mergeLockPath(projectPath);
   const result = locks.forceUnlock(lockPath);
 

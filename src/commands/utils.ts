@@ -45,7 +45,9 @@ export function parseCsvFlag(value: string | undefined): string[] {
 
 export function resolveProjectPathFromContext(cwd: string, explicit?: string): string {
   if (explicit) {
-    return resolve(explicit);
+    const candidate = resolve(cwd, explicit);
+    const explicitMarker = store.findWorkspaceMarkerFromCwd(candidate);
+    return explicitMarker?.projectPath ?? candidate;
   }
 
   const marker = store.findWorkspaceMarkerFromCwd(cwd);

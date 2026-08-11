@@ -78,6 +78,13 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
       config.merge.autoCommit = parseBoolean(value);
     } else if (key === "merge.stopOnConflict") {
       config.merge.stopOnConflict = parseBoolean(value);
+    } else if (key === "merge.allowBinaryAutoResolve") {
+      config.merge.allowBinaryAutoResolve = parseBoolean(value);
+    } else if (key === "merge.defaultOrder") {
+      if (!["created", "priority", "manual"].includes(value)) {
+        throw new SnapshotError("ERR_USAGE", `invalid merge.defaultOrder: ${value}`);
+      }
+      config.merge.defaultOrder = value as "created" | "priority" | "manual";
     } else if (key === "review.requireApprovalBeforeMerge") {
       config.review.requireApprovalBeforeMerge = parseBoolean(value);
     } else {

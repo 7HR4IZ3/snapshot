@@ -59,6 +59,17 @@ export const workspaceRecordSchema = {
     priority: { type: "number" },
     lastReviewId: { anyOf: [{ type: "string" }, { type: "null" }] },
     lastMergeSessionId: { anyOf: [{ type: "string" }, { type: "null" }] },
+    policy: {
+      type: "object",
+      properties: {
+        include: { type: "array", items: { type: "string" } },
+        exclude: { type: "array", items: { type: "string" } },
+        symlink: { type: "array", items: { type: "string" } },
+        symlinkMode: { type: "string", enum: ["shared-live", "safety-restricted"] },
+      },
+      required: ["include", "exclude", "symlink", "symlinkMode"],
+      additionalProperties: false,
+    },
   },
   required: [
     "version",
@@ -76,6 +87,7 @@ export const workspaceRecordSchema = {
     "priority",
     "lastReviewId",
     "lastMergeSessionId",
+    "policy",
   ],
   additionalProperties: false,
 } as const;

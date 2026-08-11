@@ -21,7 +21,7 @@ export async function runDoctor(context: CommandContext): Promise<CommandResult>
 
   const report = {
     projectPath,
-    ok: isGitRepo && isSnapshotInitialized,
+    ok: isGitRepo && isSnapshotInitialized && !lockPresent && !dirty,
     checks: {
       isGitRepo,
       isSnapshotInitialized,

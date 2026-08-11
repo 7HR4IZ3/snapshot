@@ -21,4 +21,5 @@ export interface ReviewRecord {
   finishedAt: string;
   overallDecision: ReviewOverallDecision;
   files: ReviewFileRecord[];
+  reviewedFingerprint?: string;
 }

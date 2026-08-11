@@ -1,7 +1,13 @@
 import { dirname, relative, resolve } from "node:path";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import micromatch from "micromatch";
-import type { WorkspaceBackend, WorkspaceRecord } from "../domain/workspace.js";
+import type { WorkspaceBackend, WorkspacePolicy, WorkspaceRecord } from "../domain/workspace.js";
+import {
+  HARD_EXCLUDED_WORKSPACE_PATHS,
+  isWorkspacePathAllowed,
+  normalizeWorkspacePattern,
+  normalizeWorkspacePolicy,
+  workspacePathMatches,
+} from "../domain/workspace-policy.js";
 import { SnapshotError } from "../errors.js";
 import { GitService } from "../../infra/git/git-service.js";
 import { MetadataStore, defaultConfig } from "../../infra/metadata/metadata-store.js";
@@ -51,6 +57,7 @@ export class WorkspaceService {
     if (!exists || force) {
       this.store.writeConfig(abs, defaultConfig(abs));
     }
+    this.git.ensureExcluded(abs, ".snapshot/");
 
     return {
       projectPath: abs,
@@ -73,6 +80,9 @@ export class WorkspaceService {
         { projectPath },
       );
     }
+    if (existsSync(workspacePath)) {
+      throw new SnapshotError("ERR_WORKSPACE_PATH_EXISTS", "workspace path already exists", { workspacePath });
+    }
 
     const fromRef = input.fromRef ?? "HEAD";
     this.git.verifyRef(projectPath, fromRef);
@@ -84,9 +94,10 @@ export class WorkspaceService {
     const branch = `snapshot/${workspaceId}`;
     const baseCommit = this.git.verifyRef(projectPath, fromRef);
     const targetBranchAtSpawn = this.git.currentBranch(projectPath);
-    const backend = this.resolveBackend(
+    const strictBackend = input.strictBackend ?? config.workspace.fallbackPolicy === "error";
+    let backend = this.resolveBackend(
       input.backend ?? config.workspace.backendDefault,
-      input.strictBackend ?? config.workspace.fallbackPolicy === "error",
+      strictBackend,
     );
 
     if (backend === "worktree") {
@@ -95,7 +106,7 @@ export class WorkspaceService {
       this.git.copyApfsClone(projectPath, workspacePath);
       this.git.checkoutNewBranch(workspacePath, branch, fromRef);
     } else {
-      this.spawnOverlayWorkspace(projectPath, workspacePath, branch, fromRef, workspaceId, input.strictBackend ?? false);
+      backend = this.spawnOverlayWorkspace(projectPath, workspacePath, branch, fromRef, workspaceId, strictBackend);
     }
 
     const effectiveInclude = input.include ?? config.workspace.include;
@@ -104,14 +115,18 @@ export class WorkspaceService {
     const effectiveSymlinkMode = input.symlinkMode ?? config.workspace.symlinkMode;
 
     const alwaysExcluded = this.alwaysExcludedPaths(projectPath, workspacePath, workspaceId);
-    this.applyWorkspaceFilters(workspacePath, effectiveInclude, effectiveExclude, alwaysExcluded);
-    if (backend === "apfs-cow") {
+    const policy = normalizeWorkspacePolicy({
+      include: effectiveInclude,
+      exclude: [...effectiveExclude, ...alwaysExcluded],
+      symlink: effectiveSymlink,
+      symlinkMode: effectiveSymlinkMode,
+    });
+    this.applyWorkspaceFilters(workspacePath, policy);
+    if (backend === "apfs-cow" || backend === "overlay") {
       this.applyWorkspaceSymlinks(
         projectPath,
         workspacePath,
-        effectiveSymlink,
-        effectiveSymlinkMode,
-        alwaysExcluded,
+        policy,
       );
     }
 
@@ -131,6 +146,7 @@ export class WorkspaceService {
       priority: 0,
       lastReviewId: null,
       lastMergeSessionId: null,
+      policy,
     };
 
     this.store.writeWorkspaceRecord(projectPath, record);
@@ -147,46 +163,21 @@ export class WorkspaceService {
 
   private applyWorkspaceFilters(
     workspacePath: string,
-    include: string[],
-    exclude: string[],
-    alwaysExcluded: string[],
+    policy: WorkspacePolicy,
   ): void {
-    const normalizedInclude = include.map((v) => this.normalizePattern(v)).filter(Boolean);
-    const normalizedExclude = [...exclude.map((v) => this.normalizePattern(v)).filter(Boolean), ...alwaysExcluded];
-
-    const shouldIncludePath = (relPath: string, isDir: boolean): boolean => {
-      if (relPath === ".git" || relPath.startsWith(".git/")) {
-        return true;
-      }
-      if (normalizedInclude.length === 0) {
-        return true;
-      }
-      if (this.pathMatchesGlob(relPath, normalizedInclude, isDir)) {
-        return true;
-      }
-      if (isDir && this.patternHasChildPath(relPath, normalizedInclude)) {
-        return true;
-      }
-      return false;
-    };
-
-    const shouldExcludePath = (relPath: string): boolean => {
-      return this.pathMatchesGlob(relPath, normalizedExclude, true);
-    };
-
     const walk = (absDir: string, relDir: string): void => {
-      const ls = Bun.spawnSync({ cmd: ["ls", "-A", absDir], stdout: "pipe", stderr: "pipe" });
-      if (ls.exitCode !== 0) {
+      let names: string[];
+      try {
+        names = readdirSync(absDir);
+      } catch {
         return;
       }
-      const names = ls.stdout
-        .toString()
-        .split("\n")
-        .map((v) => v.trim())
-        .filter(Boolean);
 
       for (const name of names) {
         const relPath = relDir ? `${relDir}/${name}` : name;
+        if (workspacePathMatches(relPath, [".git"])) {
+          continue;
+        }
         const absPath = resolve(absDir, name);
         let isDir = false;
         try {
@@ -195,7 +186,8 @@ export class WorkspaceService {
           continue;
         }
 
-        if (!shouldIncludePath(relPath, isDir) || shouldExcludePath(relPath)) {
+        if (workspacePathMatches(relPath, policy.exclude) ||
+          (!isDir && policy.include.length > 0 && !workspacePathMatches(relPath, policy.include))) {
           rmSync(absPath, { recursive: true, force: true });
           continue;
         }
@@ -212,11 +204,9 @@ export class WorkspaceService {
   private applyWorkspaceSymlinks(
     projectPath: string,
     workspacePath: string,
-    symlinkPatterns: string[],
-    symlinkMode: "shared-live" | "safety-restricted",
-    alwaysExcluded: string[],
+    policy: WorkspacePolicy,
   ): void {
-    const patterns = symlinkPatterns.map((v) => this.normalizePattern(v)).filter(Boolean);
+    const patterns = policy.symlink;
     if (patterns.length === 0) {
       return;
     }
@@ -236,6 +226,9 @@ export class WorkspaceService {
           continue;
         }
         const relPath = relDir ? `${relDir}/${name}` : name;
+        if (workspacePathMatches(relPath, [".git"])) {
+          continue;
+        }
         const absPath = resolve(absDir, name);
         let isDir = false;
         try {
@@ -244,13 +237,16 @@ export class WorkspaceService {
           continue;
         }
 
-        if (this.pathMatchesGlob(relPath, alwaysExcluded, isDir)) {
+        if (workspacePathMatches(relPath, policy.exclude) || (!isDir && !isWorkspacePathAllowed(relPath, policy))) {
           continue;
         }
 
-        if (this.pathMatchesGlob(relPath, patterns, isDir)) {
-          matches.push(relPath);
-          if (isDir) {
+        const directoryAllowed = isDir ? this.directoryPolicyAllows(absPath, relPath, policy) : true;
+        if (workspacePathMatches(relPath, patterns)) {
+          if (directoryAllowed) {
+            matches.push(relPath);
+          }
+          if (isDir && directoryAllowed) {
             continue;
           }
         }
@@ -271,7 +267,7 @@ export class WorkspaceService {
         continue;
       }
 
-      if (symlinkMode === "safety-restricted" && !this.git.isIgnored(projectPath, relPath)) {
+      if (policy.symlinkMode === "safety-restricted" && !this.git.isIgnored(projectPath, relPath)) {
         throw new SnapshotError(
           "ERR_SYMLINK_RESTRICTED",
           `refused to symlink tracked path in safety-restricted mode: ${relPath}`,
@@ -290,45 +286,39 @@ export class WorkspaceService {
     }
   }
 
-  private normalizePattern(input: string): string {
-    return input.replace(/^\.\//, "").replace(/\/$/, "").trim();
-  }
-
-  private pathMatchesGlob(relPath: string, patterns: string[], isDir: boolean): boolean {
-    if (patterns.length === 0) {
+  private directoryPolicyAllows(absDir: string, relDir: string, policy: WorkspacePolicy): boolean {
+    let names: string[];
+    try {
+      names = readdirSync(absDir);
+    } catch {
       return false;
     }
 
-    for (const pattern of patterns) {
-      const expanded = this.expandPattern(pattern, isDir);
-      if (expanded.some((p) => micromatch.isMatch(relPath, p, { dot: true }))) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private expandPattern(pattern: string, isDir: boolean): string[] {
-    const hasGlob = /[*?{}()[\]!+@]/.test(pattern);
-    if (hasGlob) {
-      return [pattern];
-    }
-    return isDir ? [pattern, `${pattern}/**`] : [pattern, `${pattern}/**`];
-  }
-
-  private patternHasChildPath(relPath: string, patterns: string[]): boolean {
-    const prefix = relPath ? `${relPath}/` : "";
-    return patterns.some((pattern) => {
-      const p = this.normalizePattern(pattern);
-      if (!p) {
+    for (const name of names) {
+      const relPath = `${relDir}/${name}`;
+      const absPath = resolve(absDir, name);
+      let isDir = false;
+      try {
+        isDir = lstatSync(absPath).isDirectory();
+      } catch {
         return false;
       }
-      return p.startsWith(prefix);
-    });
+      if (workspacePathMatches(relPath, policy.exclude)) {
+        return false;
+      }
+      if (isDir) {
+        if (!this.directoryPolicyAllows(absPath, relPath, policy)) {
+          return false;
+        }
+      } else if (!isWorkspacePathAllowed(relPath, policy)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private alwaysExcludedPaths(projectPath: string, workspacePath: string, workspaceId: string): string[] {
-    const hardcoded = [".snapshot", ".spawned", ".worktrees", "worktrees", ".snapshot-workspace.json"];
+    const hardcoded = HARD_EXCLUDED_WORKSPACE_PATHS.filter((path) => path !== ".git");
     const records = this.store.listWorkspaceRecords(projectPath);
     const dynamic = records
       .map((record) => record.workspacePath)
@@ -338,7 +328,7 @@ export class WorkspaceService {
         if (rel.startsWith("..") || rel.startsWith("/")) {
           return "";
         }
-        return this.normalizePattern(rel);
+        return normalizeWorkspacePattern(rel);
       })
       .filter(Boolean);
 
@@ -348,12 +338,12 @@ export class WorkspaceService {
         if (rel.startsWith("..") || rel.startsWith("/")) {
           return "";
         }
-        return this.normalizePattern(rel);
+        return normalizeWorkspacePattern(rel);
       })
       .filter(Boolean);
 
     const overlay = [
-      this.normalizePattern(relative(projectPath, resolve(projectPath, ".snapshot", "overlay", workspaceId))),
+      normalizeWorkspacePattern(relative(projectPath, resolve(projectPath, ".snapshot", "overlay", workspaceId))),
     ].filter(Boolean);
 
     return [...new Set([...hardcoded, ...dynamic, ...discovered, ...overlay])];
@@ -410,8 +400,12 @@ export class WorkspaceService {
       return { projectPath, checked: 0, repaired: 0, notes: ["no overlay state directory"] };
     }
 
-    const ls = Bun.spawnSync({ cmd: ["ls", "-1", overlayRoot], stdout: "pipe", stderr: "pipe" });
-    const entries = ls.exitCode === 0 ? ls.stdout.toString().trim().split("\n").filter(Boolean) : [];
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(overlayRoot);
+    } catch {
+      entries = [];
+    }
 
     let checked = 0;
     let repaired = 0;
@@ -551,7 +545,7 @@ export class WorkspaceService {
   }> {
     const project = resolve(projectPath);
     const marker = cwd ? this.store.findWorkspaceMarkerFromCwd(cwd) : null;
-    const effectiveProject = this.git.isRepo(project) ? project : marker?.projectPath ?? project;
+    const effectiveProject = marker?.projectPath ?? project;
     if (!this.git.isRepo(effectiveProject)) {
       throw new SnapshotError("ERR_NOT_GIT_REPO", "path is not a git repository", {
         projectPath: effectiveProject,
@@ -595,7 +589,8 @@ export class WorkspaceService {
     removedRecords?: number;
   } {
     if (input.allArchived) {
-      const projectPath = input.projectPath ? resolve(input.projectPath) : this.store.findProjectFromCwd(input.cwd);
+      const marker = this.store.findWorkspaceMarkerFromCwd(input.cwd);
+      const projectPath = input.projectPath ? resolve(input.projectPath) : marker?.projectPath ?? this.store.findProjectFromCwd(input.cwd);
       const records = this.store.listWorkspaceRecords(projectPath);
       const archived = records.filter((record) => record.status === "archived");
       for (const record of archived) {
@@ -614,6 +609,8 @@ export class WorkspaceService {
     const resolved = this.store.resolveWorkspaceRef(input.workspaceRef, input.cwd);
     const record = this.store.loadWorkspaceRecord(resolved.projectPath, resolved.workspaceId);
 
+    this.assertSafeWorkspacePath(record.projectPath, record.workspacePath);
+
     if (record.backend === "worktree") {
       this.git.worktreeRemove(record.projectPath, record.workspacePath, input.force ?? false);
       this.store.removeWorkspaceMarker(record.workspacePath);
@@ -625,20 +622,32 @@ export class WorkspaceService {
           try {
             const state = JSON.parse(readFileSync(statePath, "utf8")) as { mounted?: boolean; workspacePath?: string };
             if (state.mounted && state.workspacePath) {
-              Bun.spawnSync({ cmd: ["umount", state.workspacePath], stdout: "pipe", stderr: "pipe" });
+              const unmount = Bun.spawnSync({ cmd: ["umount", state.workspacePath], stdout: "pipe", stderr: "pipe" });
+              if (unmount.exitCode !== 0) {
+                throw new SnapshotError(
+                  "ERR_CLEANUP_FAILED",
+                  unmount.stderr.toString().trim() || "could not unmount overlay workspace",
+                  { workspaceId: record.workspaceId, workspacePath: state.workspacePath },
+                );
+              }
             }
-          } catch {
-            // ignore invalid state file during cleanup
+          } catch (error) {
+            if (error instanceof SnapshotError) {
+              throw error;
+            }
+            throw new SnapshotError("ERR_CLEANUP_FAILED", "could not read overlay state during cleanup", {
+              workspaceId: record.workspaceId,
+            });
           }
         }
         rmSync(overlayRoot, { recursive: true, force: true });
       }
-      Bun.spawnSync({ cmd: ["rm", "-rf", record.workspacePath], stdout: "pipe", stderr: "pipe" });
+      rmSync(record.workspacePath, { recursive: true, force: true });
     }
 
     let branchDeleted = false;
     if (input.deleteBranch ?? false) {
-      if (record.backend === "worktree") {
+      if (record.backend === "worktree" || record.backend === "overlay") {
         this.git.branchDelete(record.projectPath, record.workspaceBranch, input.force ?? false);
         branchDeleted = true;
       } else {
@@ -672,12 +681,13 @@ export class WorkspaceService {
     fromRef: string,
     workspaceId: string,
     strictBackend: boolean,
-  ): void {
+  ): WorkspaceBackend {
     const overlayRoot = resolve(projectPath, ".snapshot", "overlay", workspaceId);
     const upper = resolve(overlayRoot, "upper");
     const work = resolve(overlayRoot, "work");
     mkdirSync(upper, { recursive: true });
     mkdirSync(work, { recursive: true });
+    mkdirSync(workspacePath, { recursive: true });
 
     let mounted = false;
     const mountAttempt = Bun.spawnSync({
@@ -699,13 +709,17 @@ export class WorkspaceService {
       this.git.checkoutNewBranch(workspacePath, branch, fromRef);
     } else {
       if (strictBackend) {
+        rmSync(workspacePath, { recursive: true, force: true });
+        rmSync(overlayRoot, { recursive: true, force: true });
         throw new SnapshotError(
           "ERR_BACKEND_UNAVAILABLE",
           mountAttempt.stderr.toString().trim() || "overlay mount failed and strict backend was requested",
         );
       }
-      this.git.copyApfsClone(projectPath, workspacePath);
-      this.git.checkoutNewBranch(workspacePath, branch, fromRef);
+      rmSync(workspacePath, { recursive: true, force: true });
+      rmSync(overlayRoot, { recursive: true, force: true });
+      this.git.worktreeAdd(projectPath, workspacePath, branch, fromRef);
+      return "worktree";
     }
 
     writeFileSync(
@@ -713,5 +727,23 @@ export class WorkspaceService {
       `${JSON.stringify({ mounted, workspacePath, lowerdir: projectPath, upperdir: upper, workdir: work }, null, 2)}\n`,
       "utf8",
     );
+    return "overlay";
+  }
+
+  private assertSafeWorkspacePath(projectPath: string, workspacePath: string): void {
+    const project = resolve(projectPath);
+    const workspace = resolve(workspacePath);
+    if (workspace === project || workspace === resolve(workspace, "..")) {
+      throw new SnapshotError("ERR_UNSAFE_WORKSPACE_PATH", "refused to remove unsafe workspace path", {
+        projectPath: project,
+        workspacePath: workspace,
+      });
+    }
+    if (existsSync(workspace) && !existsSync(this.store.workspaceMarkerPath(workspace))) {
+      throw new SnapshotError("ERR_WORKSPACE_MARKER_MISSING", "refused to remove a path without a Snapshot workspace marker", {
+        projectPath: project,
+        workspacePath: workspace,
+      });
+    }
   }
 }

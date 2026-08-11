@@ -46,6 +46,13 @@ export class RevertService {
       .map((entry) => entry.mergeCommitSha as string)
       .reverse();
 
+    if (commitShas.length === 0 && session.entries.length === 1 && session.entries[0]?.result === "merged") {
+      const manualMergeCommit = this.git.firstMergeCommitAfter(projectPath, session.targetStartSha);
+      if (manualMergeCommit) {
+        commitShas.push(manualMergeCommit);
+      }
+    }
+
     if (commitShas.length === 0) {
       throw new SnapshotError("ERR_REVERT_NOTHING_TO_REVERT", "merge session has no revertible commits", {
         mergeSessionId,

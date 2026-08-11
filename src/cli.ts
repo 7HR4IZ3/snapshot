@@ -14,15 +14,20 @@ interface ParsedArgs {
 }
 
 function parseArgv(argv: string[]): ParsedArgs {
-  const [, , maybeCommand, ...rest] = argv;
-  const command =
-    maybeCommand && !maybeCommand.startsWith("--")
-      ? (maybeCommand as CommandName)
-      : undefined;
-  const tokens = command
-    ? rest
-    : [maybeCommand, ...rest].filter((v): v is string => Boolean(v));
+  const tokensAfterRuntime = argv.slice(2);
+  let commandIndex = 0;
+  while (["--json", "--verbose", "--help"].includes(tokensAfterRuntime[commandIndex] ?? "")) {
+    commandIndex += 1;
+  }
+  const maybeCommand = tokensAfterRuntime[commandIndex];
+  const command = maybeCommand && !maybeCommand.startsWith("--")
+    ? (maybeCommand as CommandName)
+    : undefined;
+  const tokens = command ? tokensAfterRuntime.slice(commandIndex + 1) : tokensAfterRuntime;
   const flags: Record<string, string | boolean> = {};
+  for (const globalFlag of tokensAfterRuntime.slice(0, commandIndex)) {
+    flags[globalFlag.slice(2)] = true;
+  }
   const positionals: string[] = [];
 
   for (let i = 0; i < tokens.length; i += 1) {

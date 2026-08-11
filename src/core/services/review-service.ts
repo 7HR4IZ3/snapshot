@@ -57,8 +57,7 @@ function parsePatchByFile(patch: string): ParsedReviewPatch[] {
   for (const line of lines) {
     if (line.startsWith("diff --git ")) {
       flushFile();
-      const parts = line.split(" ");
-      const bPath = parts[3]?.replace(/^b\//, "") ?? "unknown";
+      const bPath = parseDiffHeaderPath(line) ?? "unknown";
       current = { path: bPath, hunks: [] };
       continue;
     }
@@ -80,6 +79,62 @@ function parsePatchByFile(patch: string): ParsedReviewPatch[] {
 
   flushFile();
   return files;
+}
+
+function parseDiffHeaderPath(line: string): string | null {
+  const rest = line.slice("diff --git ".length);
+  if (rest.startsWith('"')) {
+    const firstEnd = findQuotedTokenEnd(rest, 0);
+    if (firstEnd < 0) {
+      return null;
+    }
+    const secondStart = rest.slice(firstEnd + 1).search(/\S/);
+    if (secondStart < 0) {
+      return null;
+    }
+    const absoluteSecondStart = firstEnd + 1 + secondStart;
+    const secondEnd = findQuotedTokenEnd(rest, absoluteSecondStart);
+    if (secondEnd < 0) {
+      return null;
+    }
+    return decodeGitPathToken(rest.slice(absoluteSecondStart, secondEnd + 1)).replace(/^b\//, "");
+  }
+
+  const separator = rest.lastIndexOf(" b/");
+  if (separator < 0) {
+    return null;
+  }
+  return rest.slice(separator + 3);
+}
+
+function findQuotedTokenEnd(value: string, start: number): number {
+  let escaped = false;
+  for (let index = start + 1; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function decodeGitPathToken(token: string): string {
+  if (!token.startsWith('"') || !token.endsWith('"')) {
+    return token;
+  }
+  try {
+    return JSON.parse(token) as string;
+  } catch {
+    return token.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
 }
 
 function deriveOverall(files: ReviewFileRecord[]): ReviewOverallDecision {
@@ -164,6 +219,7 @@ export class ReviewService {
         finishedAt: new Date().toISOString(),
         overallDecision: deriveOverall(files),
         files,
+        reviewedFingerprint: this.git.diffFingerprint(workspace.workspacePath, workspace.baseCommit),
       };
 
       this.store.writeReviewRecord(workspace.projectPath, record);
@@ -234,6 +290,7 @@ export class ReviewService {
       finishedAt: new Date().toISOString(),
       overallDecision: deriveOverall(files),
       files,
+      reviewedFingerprint: this.git.diffFingerprint(workspace.workspacePath, workspace.baseCommit),
     };
 
     this.store.writeReviewRecord(workspace.projectPath, record);
@@ -332,12 +389,18 @@ export class ReviewService {
           finishedAt: new Date().toISOString(),
           overallDecision: deriveOverall(files),
           files,
+          reviewedFingerprint: this.git.diffFingerprint(ws.workspacePath, ws.baseCommit),
         };
 
         this.store.writeReviewRecord(ws.projectPath, record);
         ws.lastReviewId = record.reviewId;
         this.store.writeWorkspaceRecord(ws.projectPath, ws);
         records.push(record);
+      }
+
+      if (input.exportPath) {
+        const exportPath = resolve(input.cwd, input.exportPath);
+        writeFileSync(exportPath, records.map(toMarkdown).join("\n"), "utf8");
       }
 
       return {
@@ -392,12 +455,18 @@ export class ReviewService {
         finishedAt: new Date().toISOString(),
         overallDecision: deriveOverall(files),
         files,
+        reviewedFingerprint: this.git.diffFingerprint(ws.workspacePath, ws.baseCommit),
       };
 
       this.store.writeReviewRecord(ws.projectPath, record);
       ws.lastReviewId = record.reviewId;
       this.store.writeWorkspaceRecord(ws.projectPath, ws);
       records.push(record);
+    }
+
+    if (input.exportPath) {
+      const exportPath = resolve(input.cwd, input.exportPath);
+      writeFileSync(exportPath, records.map(toMarkdown).join("\n"), "utf8");
     }
 
     return {

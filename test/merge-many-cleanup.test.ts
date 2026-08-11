@@ -329,4 +329,48 @@ describe("snapshot merge-many and cleanup", () => {
     expect(unlockJson.data.unlocked).toBe(true);
     expect(existsSync(lockPath)).toBe(false);
   }, 20000);
+
+  test("merge-many rejects multi-workspace no-commit before leaving merge state", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const ws1 = `${repo}-ws-no-commit-1`;
+    const ws2 = `${repo}-ws-no-commit-2`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "merge.autoCommit", "false", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, ws1], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, ws2], cliRoot).code).toBe(0);
+
+    writeFileSync(join(ws1, "one.txt"), "one\n", "utf8");
+    expectGitOk(["add", "."], ws1);
+    expectGitOk(["commit", "-m", "one"], ws1);
+    writeFileSync(join(ws2, "two.txt"), "two\n", "utf8");
+    expectGitOk(["add", "."], ws2);
+    expectGitOk(["commit", "-m", "two"], ws2);
+
+    const merge = runSnapshot(["merge-many", repo, "--from", `${ws1},${ws2}`, "--json"], cliRoot);
+    expect(merge.code).toBe(2);
+    expect(merge.stdout).toContain("ERR_USAGE");
+    expect(runGit(["rev-parse", "-q", "--verify", "MERGE_HEAD"], repo).code).not.toBe(0);
+  }, 20000);
+
+  test("multi-workspace approve-all review honors export path", () => {
+    const repo = setupRepo();
+    const ws1 = `${repo}-ws-review-export-1`;
+    const ws2 = `${repo}-ws-review-export-2`;
+    const exportPath = join(repo, "review.md");
+
+    expect(runSnapshot(["init", repo], repo).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, ws1], repo).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, ws2], repo).code).toBe(0);
+    writeFileSync(join(ws1, "one.txt"), "one\n", "utf8");
+    writeFileSync(join(ws2, "two.txt"), "two\n", "utf8");
+
+    const review = runSnapshot(["review", "--approve-all", "--export", exportPath, "--json"], repo);
+    expect(review.code).toBe(0);
+    expect(existsSync(exportPath)).toBe(true);
+    const markdown = readFileSync(exportPath, "utf8");
+    expect(markdown).toContain("one.txt");
+    expect(markdown).toContain("two.txt");
+  }, 20000);
 });

@@ -106,6 +106,9 @@ export class BackendService {
         reason: "overlay mount backend is only auto-detected on Linux in v1",
       };
     }
+    if (typeof process.geteuid === "function" && process.geteuid() !== 0) {
+      return { available: false, reason: "overlay mounts require elevated Linux mount privileges" };
+    }
 
     const mountProbe = Bun.spawnSync({
       cmd: ["sh", "-lc", "command -v mount >/dev/null 2>&1"],

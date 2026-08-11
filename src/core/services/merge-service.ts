@@ -8,6 +8,7 @@ import type {
   MergeSessionRecord,
 } from "../domain/merge.js";
 import type { WorkspaceRecord } from "../domain/workspace.js";
+import { isWorkspacePathAllowed } from "../domain/workspace-policy.js";
 import { SnapshotError } from "../errors.js";
 import type { PorcelainEntry } from "../../infra/git/git-service.js";
 import { GitService } from "../../infra/git/git-service.js";
@@ -168,15 +169,21 @@ export class MergeService {
 
     return this.locks.withLock(lockPath, scope, () => {
       this.ensureCleanTarget(projectPath);
-      if (input.targetBranch && input.targetBranch !== this.git.currentBranch(projectPath)) {
-        this.git.checkout(projectPath, input.targetBranch);
-      }
-
       const config = this.store.loadConfig(projectPath);
       const prefer = input.prefer ?? config.merge.prefer;
       const order = input.order ?? config.merge.defaultOrder;
       const continueOnConflict = input.continueOnConflict ?? !config.merge.stopOnConflict;
       const commit = input.commit ?? config.merge.autoCommit;
+      if (!commit && input.workspaceRefs.length > 1) {
+        throw new SnapshotError(
+          "ERR_USAGE",
+          "merge-many --no-commit supports only one workspace; commit or merge workspaces one at a time",
+        );
+      }
+      if (input.targetBranch && input.targetBranch !== this.git.currentBranch(projectPath)) {
+        this.git.checkout(projectPath, input.targetBranch);
+      }
+
       const sessionId = this.nextMergeSessionId();
       const startedAt = new Date().toISOString();
       const targetBranch = this.git.currentBranch(projectPath);
@@ -322,13 +329,22 @@ export class MergeService {
     let autoCommitSha: string | null = null;
     const workspacePending = this.git.statusPorcelain(workspace.workspacePath);
     if (workspacePending.length > 0) {
-      autoCommitSha = this.git.commitAll(
+      autoCommitSha = this.git.commitScopedChanges(
         workspace.workspacePath,
         `snapshot: checkpoint ${options.sessionId} before merge`,
+        (path) => isWorkspacePathAllowed(path, workspace.policy),
       );
     }
 
     const sourceRef = this.resolveMergeSourceRef(projectPath, workspace);
+    const sourceChanges = this.git.diffNameStatus(projectPath, workspace.baseCommit, sourceRef);
+    const outOfScope = sourceChanges.filter((change) => !isWorkspacePathAllowed(change.path, workspace.policy));
+    if (outOfScope.length > 0) {
+      throw new SnapshotError("ERR_WORKSPACE_SCOPE_VIOLATION", "workspace contains changes outside its spawn policy", {
+        workspaceId: workspace.workspaceId,
+        paths: outOfScope.map((change) => change.path),
+      });
+    }
     const attempt = this.git.merge(projectPath, sourceRef, {
       prefer: options.prefer,
       commit: options.commit,
@@ -395,6 +411,9 @@ export class MergeService {
     }
 
     if (attempt.exitCode !== 0) {
+      if (this.git.isMergeInProgress(projectPath)) {
+        this.git.mergeAbort(projectPath);
+      }
       workspace.status = "conflicted";
       workspace.lastMergeSessionId = options.sessionId;
       this.store.writeWorkspaceRecord(projectPath, workspace);
@@ -475,15 +494,6 @@ export class MergeService {
     const record = this.store.loadWorkspaceRecord(projectPath, resolved.workspaceId);
     const config = this.store.loadConfig(projectPath);
     if (config.review.requireApprovalBeforeMerge) {
-      if (this.git.statusPorcelain(record.workspacePath).length > 0) {
-        throw new SnapshotError(
-          "ERR_REVIEW_REQUIRED",
-          "workspace has unreviewed local changes; run review again before merge",
-          {
-            workspaceId: record.workspaceId,
-          },
-        );
-      }
       if (!record.lastReviewId) {
         throw new SnapshotError("ERR_REVIEW_REQUIRED", "workspace requires approved review before merge", {
           workspaceId: record.workspaceId,
@@ -495,6 +505,13 @@ export class MergeService {
           workspaceId: record.workspaceId,
           reviewId: review.reviewId,
           overallDecision: review.overallDecision,
+        });
+      }
+      const currentFingerprint = this.git.diffFingerprint(record.workspacePath, record.baseCommit);
+      if (!review.reviewedFingerprint || review.reviewedFingerprint !== currentFingerprint) {
+        throw new SnapshotError("ERR_REVIEW_REQUIRED", "workspace changed after its last approved review", {
+          workspaceId: record.workspaceId,
+          reviewId: review.reviewId,
         });
       }
     }

@@ -84,21 +84,9 @@ export class GitService {
   }
 
   hasUncommittedChanges(path: string): boolean {
-    const unstaged = Bun.spawnSync({
-      cmd: ["git", "-C", path, "diff", "--quiet"],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if (unstaged.exitCode !== 0) {
-      return true;
-    }
-
-    const staged = Bun.spawnSync({
-      cmd: ["git", "-C", path, "diff", "--cached", "--quiet"],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return staged.exitCode !== 0;
+    return this.statusPorcelain(path).some((entry) =>
+      entry.path !== ".snapshot" && !entry.path.startsWith(".snapshot/"),
+    );
   }
 
   checkout(path: string, branch: string): void {
@@ -144,6 +132,16 @@ export class GitService {
     }
   }
 
+  isMergeInProgress(path: string): boolean {
+    const attempt = runGitRaw(["rev-parse", "-q", "--verify", "MERGE_HEAD"], path);
+    return attempt.exitCode === 0;
+  }
+
+  firstMergeCommitAfter(path: string, baseRef: string): string | null {
+    const output = runGit(["rev-list", "--first-parent", "--merges", "--reverse", `${baseRef}..HEAD`], path);
+    return output.split("\n").map((line) => line.trim()).find(Boolean) ?? null;
+  }
+
   mergeFile(currentPath: string, basePath: string, otherPath: string): MergeFileAttemptResult {
     const proc = Bun.spawnSync({
       cmd: ["git", "merge-file", "-p", currentPath, basePath, otherPath],
@@ -182,7 +180,7 @@ export class GitService {
   }
 
   statusPorcelain(path: string): PorcelainEntry[] {
-    const out = runGit(["status", "--porcelain"], path);
+    const out = runGit(["status", "--porcelain", "--untracked-files=all"], path);
     if (!out) {
       return [];
     }
@@ -276,6 +274,9 @@ export class GitService {
     if (process.platform !== "linux") {
       return false;
     }
+    if (typeof process.geteuid === "function" && process.geteuid() !== 0) {
+      return false;
+    }
     const probe = Bun.spawnSync({
       cmd: ["sh", "-lc", "command -v mount >/dev/null 2>&1"],
       stdout: "pipe",
@@ -308,10 +309,8 @@ export class GitService {
   diffNameStatus(path: string, baseRef: string, headRef?: string): FileChange[] {
     const range = headRef ? `${baseRef}...${headRef}` : baseRef;
     const output = runGit(["diff", "--name-status", range], path);
-    if (!output) {
-      return [];
-    }
-    return output
+    const changes = output
+      ? output
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
@@ -319,19 +318,97 @@ export class GitService {
         const [status, ...rest] = line.split("\t");
         return {
           status: status ?? "",
-          path: rest.join("\t"),
+          path: (status?.startsWith("R") || status?.startsWith("C")) && rest.length >= 2
+            ? `${rest[0]} -> ${rest[1]}`
+            : rest.join("\t"),
         };
-      });
+      })
+      : [];
+
+    if (!headRef) {
+      const known = new Set(changes.map((change) => change.path));
+      for (const pathPart of this.untrackedFiles(path)) {
+        if (!known.has(pathPart)) {
+          changes.push({ status: "??", path: pathPart });
+        }
+      }
+    }
+
+    return changes;
   }
 
   diffPatch(path: string, baseRef: string, headRef?: string): string {
     const range = headRef ? `${baseRef}...${headRef}` : baseRef;
-    return runGit(["diff", range], path);
+    const trackedPatch = runGit(["diff", range], path);
+    if (headRef) {
+      return trackedPatch;
+    }
+
+    const untrackedPatches = this.untrackedFiles(path).map((relPath) => this.diffUntrackedFile(path, relPath));
+    return [trackedPatch, ...untrackedPatches].filter(Boolean).join("\n");
+  }
+
+  diffFingerprint(path: string, baseRef: string): string {
+    const hasher = new Bun.CryptoHasher("sha256");
+    hasher.update(JSON.stringify(this.diffNameStatus(path, baseRef)));
+    hasher.update("\n");
+    hasher.update(this.diffPatch(path, baseRef));
+    return hasher.digest("hex");
+  }
+
+  commitScopedChanges(path: string, message: string, isAllowed: (path: string) => boolean): string | null {
+    const pending = this.statusPorcelain(path);
+    if (pending.length === 0) {
+      return null;
+    }
+
+    runGit(["add", "-A", "--", "."], path);
+    const disallowed = [...new Set(pending.map((entry) => entry.path).filter((entryPath) => !isAllowed(entryPath)))];
+    if (disallowed.length > 0) {
+      runGit(["reset", "--", ...disallowed], path);
+    }
+
+    const staged = Bun.spawnSync({
+      cmd: ["git", "-C", path, "diff", "--cached", "--quiet"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (staged.exitCode === 0) {
+      return null;
+    }
+
+    runGit(["commit", "-m", message], path);
+    return this.headSha(path);
   }
 
   commitAll(path: string, message: string): string {
-    runGit(["add", "-A"], path);
+    runGit(["add", "-A", "--", "."], path);
     runGit(["commit", "-m", message], path);
     return this.headSha(path);
+  }
+
+  private untrackedFiles(path: string): string[] {
+    const output = runGit(["ls-files", "--others", "--exclude-standard", "-z"], path);
+    return output.split("\0").filter(Boolean);
+  }
+
+  private diffUntrackedFile(path: string, relPath: string): string {
+    const nullDevice = process.platform === "win32" ? "NUL" : "/dev/null";
+    const attempt = Bun.spawnSync({
+      cmd: ["git", "diff", "--no-index", "--", nullDevice, relPath],
+      cwd: path,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    if (attempt.exitCode !== 0 && attempt.exitCode !== 1) {
+      throw new SnapshotError("ERR_GIT_COMMAND_FAILED", attempt.stderr.toString().trim() || "git diff failed", {
+        path,
+        relPath,
+        stdout: attempt.stdout.toString(),
+        stderr: attempt.stderr.toString(),
+        exitCode: attempt.exitCode,
+      });
+    }
+    return attempt.stdout.toString();
   }
 }

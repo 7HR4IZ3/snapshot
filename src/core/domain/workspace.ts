@@ -1,4 +1,7 @@
 import type { MergeOrder, MergePrefer } from "./merge.js";
+import type { WorkspacePolicy } from "./workspace-policy.js";
+
+export type { WorkspacePolicy } from "./workspace-policy.js";
 
 export type WorkspaceBackend = "worktree" | "apfs-cow" | "overlay";
 
@@ -43,6 +46,7 @@ export interface WorkspaceRecord {
   priority: number;
   lastReviewId: string | null;
   lastMergeSessionId: string | null;
+  policy: WorkspacePolicy;
 }
 
 export interface WorkspaceMarker {

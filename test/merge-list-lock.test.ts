@@ -431,4 +431,165 @@ describe("snapshot merge/list/lock", () => {
     expect(merge.code).toBe(4);
     expect(merge.stderr).toContain("ERR_LOCK_HELD");
   }, 20000);
+
+  test("filtered workspace merge does not delete excluded tracked files", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-filter-merge`;
+
+    writeFileSync(join(repo, "keep.txt"), "keep base\n", "utf8");
+    writeFileSync(join(repo, "excluded.txt"), "must survive\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "filter merge fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, workspace, "--include", "keep.txt", "--json"], cliRoot).code).toBe(0);
+
+    writeFileSync(join(workspace, "keep.txt"), "keep changed\n", "utf8");
+    const merge = runSnapshot(["merge", workspace, repo, "--json"], cliRoot);
+    expect(merge.code).toBe(0);
+    expect(readFileSync(join(repo, "keep.txt"), "utf8")).toBe("keep changed\n");
+    expect(readFileSync(join(repo, "excluded.txt"), "utf8")).toBe("must survive\n");
+  }, 20000);
+
+  test("nested glob includes descend through wildcard directories", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-nested-glob`;
+
+    mkdirSync(join(repo, "packages", "one", "src"), { recursive: true });
+    mkdirSync(join(repo, "packages", "one", "test"), { recursive: true });
+    writeFileSync(join(repo, "packages", "one", "src", "index.ts"), "export {}\n", "utf8");
+    writeFileSync(join(repo, "packages", "one", "test", "index.test.ts"), "test\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "nested glob fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(
+      runSnapshot(["spawn", repo, workspace, "--include", "packages/*/src/**", "--json"], cliRoot).code,
+    ).toBe(0);
+
+    expect(existsSync(join(workspace, "packages", "one", "src", "index.ts"))).toBe(true);
+    expect(existsSync(join(workspace, "packages", "one", "test", "index.test.ts"))).toBe(false);
+  }, 20000);
+
+  test("untracked files appear in workspace status", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-untracked`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, workspace, "--json"], cliRoot).code).toBe(0);
+    writeFileSync(join(workspace, "new file.txt"), "untracked\n", "utf8");
+
+    const status = runSnapshot(["status", workspace, "--json"], cliRoot);
+    expect(status.code).toBe(0);
+    const json = JSON.parse(status.stdout) as { data: { changedFiles: number; changes: Array<{ path: string }> } };
+    expect(json.data.changedFiles).toBe(1);
+    expect(json.data.changes[0]?.path).toBe("new file.txt");
+
+    const review = runSnapshot(["review", workspace, "--readonly", "--json"], cliRoot);
+    expect(review.code).toBe(0);
+    const reviewJson = JSON.parse(review.stdout) as { data: { preview: Array<{ path: string; hunkCount: number }> } };
+    expect(reviewJson.data.preview[0]?.path).toBe("new file.txt");
+    expect(reviewJson.data.preview[0]?.hunkCount).toBeGreaterThan(0);
+  }, 20000);
+
+  test("global json flag works before the command", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const init = runSnapshot(["--json", "init", repo], cliRoot);
+    expect(init.code).toBe(0);
+    const json = JSON.parse(init.stdout) as { ok: boolean; command: string };
+    expect(json.ok).toBe(true);
+    expect(json.command).toBe("init");
+  }, 20000);
+
+  test("symlink policy never links the git directory", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-git-symlink`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    const spawn = runSnapshot(
+      ["spawn", repo, workspace, "--backend", "apfs-cow", "--symlink", "**", "--symlink-mode", "shared-live", "--json"],
+      cliRoot,
+    );
+    expect(spawn.code).toBe(0);
+    const json = JSON.parse(spawn.stdout) as { data: { backend: string } };
+    if (json.data.backend === "apfs-cow") {
+      expect(lstatSync(join(workspace, ".git")).isSymbolicLink()).toBe(false);
+    }
+  }, 20000);
+
+  test("directory symlinks cannot bypass excluded descendants", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-symlink-scope`;
+
+    mkdirSync(join(repo, "shared", "private"), { recursive: true });
+    writeFileSync(join(repo, "shared", "live.txt"), "live\n", "utf8");
+    writeFileSync(join(repo, "shared", "private", "secret.txt"), "secret\n", "utf8");
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "symlink scope fixtures"], repo);
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+
+    const spawn = runSnapshot(
+      [
+        "spawn",
+        repo,
+        workspace,
+        "--backend",
+        "apfs-cow",
+        "--exclude",
+        "shared/private/**",
+        "--symlink",
+        "shared/**",
+        "--json",
+      ],
+      cliRoot,
+    );
+    expect(spawn.code).toBe(0);
+    const json = JSON.parse(spawn.stdout) as { data: { backend: string } };
+    if (json.data.backend === "apfs-cow") {
+      expect(lstatSync(join(workspace, "shared")).isSymbolicLink()).toBe(false);
+      expect(lstatSync(join(workspace, "shared", "live.txt")).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(workspace, "shared", "private", "secret.txt"))).toBe(false);
+    }
+  }, 20000);
+
+  test("approved review gates merge without requiring a clean workspace", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-review-gate`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["config", "set", "review.requireApprovalBeforeMerge", "true", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, workspace], cliRoot).code).toBe(0);
+    writeFileSync(join(workspace, "hello.txt"), "approved change\n", "utf8");
+
+    expect(runSnapshot(["review", workspace, "--approve-all"], cliRoot).code).toBe(0);
+    const merge = runSnapshot(["merge", workspace, repo, "--json"], cliRoot);
+    expect(merge.code).toBe(0);
+    expect(readFileSync(join(repo, "hello.txt"), "utf8")).toBe("approved change\n");
+  }, 20000);
+
+  test("single no-commit merge can be reverted after manual git commit", () => {
+    const cliRoot = process.cwd();
+    const repo = setupRepo();
+    const workspace = `${repo}-workspace-manual-merge`;
+
+    expect(runSnapshot(["init", repo], cliRoot).code).toBe(0);
+    expect(runSnapshot(["spawn", repo, workspace], cliRoot).code).toBe(0);
+    writeFileSync(join(workspace, "hello.txt"), "manual merge\n", "utf8");
+    expectGitOk(["add", "."], workspace);
+    expectGitOk(["commit", "-m", "workspace manual merge"], workspace);
+
+    const merge = runSnapshot(["merge", workspace, repo, "--no-commit", "--json"], cliRoot);
+    expect(merge.code).toBe(0);
+    expectGitOk(["add", "."], repo);
+    expectGitOk(["commit", "-m", "complete snapshot merge"], repo);
+
+    const revert = runSnapshot(["revert", repo, "--last", "--json"], cliRoot);
+    expect(revert.code).toBe(0);
+    expect(readFileSync(join(repo, "hello.txt"), "utf8")).toBe("hello\n");
+  }, 20000);
 });

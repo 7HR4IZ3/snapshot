@@ -1,13 +1,12 @@
 import type { CommandContext, CommandResult } from "./types.js";
-import { assertPositional, flagString, toJsonResponse } from "./utils.js";
-import { resolve } from "node:path";
+import { flagString, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runReview(context: CommandContext): Promise<CommandResult> {
   const workspaceRef = context.positionals[0];
   const cwd = context.cwd;
 
   if (!workspaceRef || workspaceRef === "." || workspaceRef === "/") {
-    const projectPath = resolve(cwd);
+    const projectPath = resolveProjectPathFromContext(cwd);
     const result = await context.reviewService.reviewAll({
       projectPath,
       cwd: context.cwd,
