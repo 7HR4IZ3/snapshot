@@ -1,509 +1,179 @@
-# Snapshot
+<h1 align="center">Snapshot</h1>
 
-Snapshot is a CLI for running multiple AI workspaces against one codebase with controlled review and merge workflows.
+<p align="center">
+  Git workspaces for agents that do not step on each other.<br>
+  Spawn the work. Review the diff. Keep the merge.
+</p>
 
-It is designed for this problem: you want parallel agent output, but you still want deterministic merges, explicit conflict reports, and reversible operations.
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#the-workflow">Workflow</a> ·
+  <a href="DOCS.md">Documentation</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
 
-## What Snapshot Gives You
+Your agents can work in parallel. Your main checkout does not have to.
 
-- Isolated workspaces per agent.
-- Single-file snapshots for one or many AI-specific temp files.
-- Multiple workspace backends (`worktree`, `apfs-cow`, `overlay`, `auto`).
-- Merge orchestration (`merge`, `merge-many`, `preflight`, reports).
-- Review artifacts (interactive TUI and non-interactive approval mode).
-- Recovery commands (`doctor`, `repair-mounts`, `unlock`, `revert`).
-- Configurable workspace policies (`include`, `exclude`, `symlink`) with hard safety excludes.
+Snapshot gives each agent its own workspace and branch, records what that workspace started from, and lets you review the result before it reaches the project. It is a small local CLI around Git—not an agent runner, hosted service, or replacement for Git.
 
-## Installation and Setup
+## Install
 
-From this repository:
+Snapshot currently builds from source. You need [Bun](https://bun.sh) and Git.
 
-```bash
+```sh
+git clone https://github.com/7HR4IZ3/snapshot.git
+cd snapshot
 bun install
 bun run build
 bun link
 ```
 
-Verify global command:
+Check that the command is available:
 
-```bash
+```sh
 snapshot --help
 ```
 
-If you prefer local source execution during development:
+## The workflow
 
-```bash
-bun run src/cli.ts --help
+Run Snapshot from the repository you want to coordinate:
+
+```sh
+cd /path/to/project
+snapshot init
+snapshot spawn ../project-agent-a --label agent-a
+snapshot spawn ../project-agent-b --label agent-b
+snapshot tui
 ```
 
-## Concepts
+Now let the agents work in their own directories. When they are ready:
 
-- Project: the canonical git repository.
-- Workspace: a spawned isolated working area associated with an agent.
-- Workspace backend: how workspace files are materialized.
-- File snapshot: a copied single file that can be edited outside the repo and pulled back later.
-- Merge session: recorded result of `merge` or `merge-many`.
-- Review artifact: persisted decision record from `review`.
-
-## Backend Guide
-
-Snapshot supports these backend modes for `spawn`:
-
-- `worktree`
-  - Uses git worktrees.
-  - Very stable baseline behavior.
-  - Can use more disk than CoW approaches for large trees.
-
-- `apfs-cow`
-  - Uses APFS copy-on-write clone behavior (macOS-focused).
-  - Better disk efficiency for large repos when files are mostly unchanged.
-  - Supports symlink policy controls.
-
-- `overlay`
-  - Uses overlay-style mounting logic where available.
-  - Host capability dependent.
-  - Can fail in strict mode if host/mount setup is not compatible.
-
-- `auto`
-  - Chooses best available backend from host capabilities and config.
-
-Inspect backend support on current host:
-
-```bash
-snapshot backends /path/to/project
+```sh
+snapshot list
+snapshot status ../project-agent-a
+snapshot diff ../project-agent-a --stat
+snapshot review ../project-agent-a
+snapshot merge ../project-agent-a
 ```
 
-Strict backend request (no fallback):
+The usual shape is:
 
-```bash
-snapshot spawn /path/to/project /path/to/ws --backend overlay --strict-backend
+```text
+one project → several workspaces → review → selected merges
 ```
 
-## 5-Minute Quickstart
+## What Snapshot does
 
-Assume your repo is `/path/to/project`.
+### Gives every agent a real workspace
 
-1) Initialize Snapshot metadata:
+`snapshot spawn` creates an isolated workspace and branch from the current project. Each record keeps the workspace path, branch, base commit, backend, policy, and lifecycle state together, so “which version did this agent start from?” has an answer.
 
-```bash
-snapshot init /path/to/project
+The default `worktree` backend is the dependable choice. On hosts that support them, `apfs-cow` saves disk space with APFS copy-on-write clones and `overlay` uses an overlay-style mount. `auto` chooses the best available option.
+
+### Lets you review before you merge
+
+`snapshot status` and `snapshot diff` are useful from a shell. `snapshot review` opens the OpenTUI review screen in an interactive terminal, with file and hunk navigation, decisions, notes, and an approval record.
+
+Nothing is merged just because a workspace exists. You decide what is ready.
+
+### Makes merging deliberate
+
+Merge one workspace or queue several of them:
+
+```sh
+snapshot merge ../project-agent-a
+snapshot merge-many --from ../project-agent-a,../project-agent-b
 ```
 
-2) Spawn a workspace:
+A single merge can be committed or left for manual Git control. Multi-workspace merges need commits so each entry can be tracked and reverted safely. They are processed in a deterministic order and can write a report for what was merged, skipped, or left unresolved.
 
-```bash
-snapshot spawn /path/to/project /path/to/project-agent-a --backend auto
+### Gives conflicts somewhere to go
+
+When an interactive merge conflicts, Snapshot opens an OpenTUI resolver instead of leaving you with an unexplained failure. Choose the target version, the workspace version, or a manual edit for each conflict, then finalize when the result is complete.
+
+If a merge needs attention later, the project also has:
+
+```sh
+snapshot doctor
+snapshot unlock --force
+snapshot revert --last
 ```
 
-3) Edit files in `/path/to/project-agent-a`.
+`unlock --force` is for a merge lock you have confirmed is stale. `revert` works from Snapshot’s recorded merge sessions, so recovery is part of the workflow rather than an emergency scavenger hunt.
 
-4) Inspect:
+### Handles the small jobs too
 
-```bash
-snapshot status /path/to/project-agent-a
-snapshot diff /path/to/project-agent-a --stat
+Not every task needs a complete workspace. For a generated file, prompt output, or one-file experiment:
+
+```sh
+snapshot spawn-file src/app.ts /tmp/app.agent.ts
+# edit /tmp/app.agent.ts
+snapshot pull-file /tmp/app.agent.ts
 ```
 
-5) Merge:
+Snapshot keeps a base copy and attempts a three-way merge when both the project file and the copied file changed. Use `pull-all` when several file snapshots are ready.
 
-```bash
-snapshot merge /path/to/project-agent-a /path/to/project
+## The dashboard
+
+```sh
+snapshot tui
 ```
 
-Single-file flow:
+The dashboard keeps the project’s moving parts in one place: workspace inventory, changed-file counts, merge sessions, conflicts, backend capabilities, and project health.
 
-```bash
-snapshot spawn-file /path/to/project src/app.ts /tmp/app.agent-a.ts
-snapshot spawn-file /path/to/project src/app.ts /tmp/app.agent-b.ts
-snapshot pull-file /tmp/app.agent-a.ts /path/to/project
-snapshot pull-all /path/to/project
+The other interactive screens use the same OpenTUI foundation:
+
+- `snapshot review <workspace-ref>` for reviewing a workspace.
+- The conflict resolver for interactive merge conflicts.
+
+Use `1`–`4` to switch dashboard views, `j`/`k` or the arrow keys to move, `r` to refresh, `?` for help, and `q` to leave.
+
+## Run it from anywhere
+
+Project-scoped commands use the current directory by default:
+
+```sh
+snapshot list
+snapshot doctor
+snapshot config get
 ```
 
-## Workspace Policy: Include, Exclude, Symlink
+When the project is somewhere else, say so explicitly:
 
-Snapshot can filter workspace content and (for `apfs-cow`) symlink selected paths.
-
-Config keys:
-
-- `workspace.include`
-- `workspace.exclude`
-- `workspace.symlink`
-- `workspace.symlinkMode` (`shared-live` or `safety-restricted`)
-
-All three lists support glob patterns.
-
-Examples:
-
-```bash
-snapshot config set workspace.include "src/**,packages/*/src/**" /path/to/project
-snapshot config set workspace.exclude "**/private/**,**/*.secret" /path/to/project
-snapshot config set workspace.symlink "generated/**" /path/to/project
-snapshot config set workspace.symlinkMode "safety-restricted" /path/to/project
+```sh
+snapshot doctor --project /path/to/project
+snapshot tui --project /path/to/project
 ```
 
-Per-spawn overrides:
+If you run a command inside a spawned workspace, Snapshot follows its workspace marker back to the canonical project. The explicit `--project` form is preferred when scripting or working across several repositories.
 
-```bash
-snapshot spawn /path/to/project /path/to/ws \
-  --backend apfs-cow \
-  --include "src/**,generated/**" \
-  --exclude "**/private/**" \
-  --symlink "generated/**" \
-  --symlink-mode shared-live
+## Keep automation boring
+
+Snapshot has machine-readable output and non-interactive review modes for scripts and CI:
+
+```sh
+snapshot --json list
+snapshot review ../project-agent-a --approve-all
+snapshot review ../project-agent-a --readonly
 ```
 
-Important behavior:
+Interactive screens need a TTY. Use JSON output, `--readonly`, `--approve-all`, or external conflict tooling when there is no terminal to draw on.
 
-- `shared-live`: symlinked paths are live links to project files. Editing them mutates canonical project content immediately.
-- `safety-restricted`: symlinks to tracked paths are blocked; ignored/generated paths are allowed.
+## Local by design
 
-Always-on hard excludes (cannot be overridden):
+Snapshot works with the Git repository on your machine. Project metadata lives in `.snapshot/`, which Snapshot adds to Git’s excludes during initialization. The tool does not run your agents or require an account; it gives the work around them a safer shape.
 
-- `.snapshot`
-- `.spawned`
-- `.worktrees`
-- `worktrees`
-- spawned workspace internals and discovered spawned workspace dirs
+## Documentation
 
-## Command Reference
+[DOCS.md](DOCS.md) has the complete command reference, dashboard and conflict keys, workspace policy, backend behavior, configuration, recovery notes, troubleshooting, and contributor details.
 
-This section explains what each command is for, its key parameters, and common usage.
+## Contributing
 
-### `snapshot init [project-path] [--force]`
-
-Purpose:
-
-- Initialize `.snapshot/` metadata in a git repo.
-- Safe to run repeatedly (idempotent).
-
-Parameters:
-
-- `project-path` optional. If omitted, current directory is used.
-- `--force` rewrites defaults.
-
-Notes:
-
-- Fails if you run it from inside a spawned workspace path.
-
-### `snapshot spawn [project-path] <workspace-path> [flags]`
-
-Purpose:
-
-- Create a new agent workspace and metadata record.
-
-Parameters:
-
-- `project-path` optional (resolved from context if omitted).
-- `workspace-path` required destination path.
-
-Key flags:
-
-- `--backend auto|worktree|apfs-cow|overlay`
-- `--strict-backend`
-- `--agent <id>`
-- `--label <name>`
-- `--from <branch-or-sha>`
-- `--include <csv-globs>`
-- `--exclude <csv-globs>`
-- `--symlink <csv-globs>`
-- `--symlink-mode shared-live|safety-restricted`
-
-Behavior notes:
-
-- Parent directories for `workspace-path` are created recursively.
-- Policy flags override config for that spawn only.
-
-### `snapshot spawn-file [project-path] <source-file> <snapshot-file> [flags]`
-
-Purpose:
-
-- Create a single-file snapshot copy outside the repo and persist metadata for later pull-in.
-
-Parameters:
-
-- `project-path` optional (resolved from context if omitted).
-- `source-file` required file inside the target project.
-- `snapshot-file` required destination copy path for the AI to edit.
-
-Key flags:
-
-- `--agent <id>`
-- `--label <name>`
-
-Behavior notes:
-
-- Stores a base copy under `.snapshot/file-snapshots/` for later three-way merge checks.
-- You can create multiple snapshots for the same source file.
-
-### `snapshot list [project-path]`
-
-Purpose:
-
-- List known workspaces with backend, status, changed file count, and path.
-
-### `snapshot status <workspace-ref>`
-
-Purpose:
-
-- Show workspace metadata, backend, review status, and file-change summary.
-
-`workspace-ref` can be workspace path or workspace id.
-
-### `snapshot diff <workspace-ref> [flags]`
-
-Purpose:
-
-- Show workspace changes relative to base commit.
-
-Flags:
-
-- `--name-only`
-- `--patch`
-- `--stat`
-- `--base <sha>`
-
-### `snapshot review <workspace-ref> [flags]`
-
-Purpose:
-
-- Create review artifacts for workspace changes.
-
-Modes:
-
-- interactive TUI (default in TTY)
-- `--readonly` (no artifact write)
-- `--approve-all` (non-interactive approved artifact)
-
-Flags:
-
-- `--reviewer <id>`
-- `--export <path>`
-
-### `snapshot merge <workspace-ref> [project-path] [flags]`
-
-Purpose:
-
-- Merge one workspace into target branch.
-
-Flags:
-
-- `--target <branch>`
-- `--prefer none|virtual|target`
-- `--commit`
-- `--no-commit`
-- `--message <text>`
-
-Behavior notes:
-
-- Auto-checkpoints uncommitted workspace changes before merge.
-- Uses config `merge.autoCommit` if commit flags are omitted.
-- If merge fails with conflicts (human mode, non-JSON, TTY), Snapshot opens conflict UI automatically.
-- Conflict UI shows target vs workspace content side-by-side at the top, and a conflict-free merged preview below.
-- Resolve actions in UI:
-  - `1` keep target
-  - `2` keep workspace
-  - `3` manual
-  - `f` finalize staged choices
-
-### `snapshot merge-many [project-path] --from <refs> [flags]`
-
-Purpose:
-
-- Merge multiple workspaces in a deterministic queue.
-
-Required:
-
-- `--from <ws1,ws2,...>`
-
-Flags:
-
-- `--order created|priority|manual`
-- `--preflight`
-- `--continue-on-conflict`
-- `--stop-on-conflict`
-- `--report <path>`
-- `--commit` / `--no-commit`
-
-Behavior notes:
-
-- stop-on-conflict records remaining entries as `skipped`.
-- preflight mode is non-mutating.
-- `--no-commit` is limited to one workspace; multi-workspace merges need commits so each entry can be tracked and reverted safely.
-
-### `snapshot pull-file <snapshot-ref> [project-path] [--force]`
-
-Purpose:
-
-- Pull one file snapshot back into the main repo file.
-
-Behavior notes:
-
-- Accepts a snapshot file path or file snapshot id.
-- If both the repo file and the snapshot changed, Snapshot attempts a three-way text merge.
-- If that merge conflicts, the file snapshot is marked `conflicted`.
-- `--force` overwrites the repo file with snapshot content.
-
-### `snapshot pull-all [project-path] [--force]`
-
-Purpose:
-
-- Pull all active or conflicted file snapshots for a project in created order.
-
-Behavior notes:
-
-- Continues past file-level conflicts and reports per-snapshot results.
-- Useful when you spawned multiple single-file copies for multiple AIs.
-
-### `snapshot revert [project-path] [flags]`
-
-Purpose:
-
-- Revert merge-session commits.
-
-Flags:
-
-- `--session <merge-session-id>`
-- `--last`
-- `--abort`
-
-### `snapshot cleanup ...`
-
-Purpose:
-
-- Remove workspaces and archive/purge metadata.
-
-Forms:
-
-- `snapshot cleanup <workspace-ref> [--delete-branch] [--force]`
-- `snapshot cleanup [project-path] --all-archived`
-
-### `snapshot unlock [project-path] --force`
-
-Purpose:
-
-- Force remove merge lock file.
-
-### `snapshot backends [project-path]`
-
-Purpose:
-
-- Show backend availability/capability diagnostics.
-
-### `snapshot repair-mounts [project-path]`
-
-Purpose:
-
-- Repair stale overlay metadata state.
-
-### `snapshot doctor [project-path] [--repair]`
-
-Purpose:
-
-- Combined health report for repo/snapshot/lock/backend status.
-
-Flag:
-
-- `--repair` also runs overlay repair.
-
-### `snapshot config ...`
-
-Purpose:
-
-- Get and set project config values.
-
-Forms:
-
-- `snapshot config get [project-path]`
-- `snapshot config set <key> <value> [project-path]`
-
-Common keys:
-
-- `workspace.backendDefault`
-- `workspace.fallbackPolicy`
-- `workspace.include`
-- `workspace.exclude`
-- `workspace.symlink`
-- `workspace.symlinkMode`
-- `merge.prefer`
-- `merge.autoCommit`
-- `merge.stopOnConflict`
-- `merge.allowBinaryAutoResolve`
-- `merge.defaultOrder`
-- `review.requireApprovalBeforeMerge`
-
-## Examples by Scenario
-
-### Scenario: Merge generated files as live symlinks only
-
-```bash
-snapshot config set workspace.symlink "generated/**" /path/to/project
-snapshot config set workspace.symlinkMode "safety-restricted" /path/to/project
-snapshot spawn /path/to/project /path/to/ws --backend apfs-cow
-```
-
-### Scenario: Manual commit control in merge pipeline
-
-```bash
-snapshot config set merge.autoCommit false /path/to/project
-snapshot merge /path/to/ws /path/to/project
-git -C /path/to/project status
-git -C /path/to/project commit -m "manual merge commit"
-```
-
-### Scenario: Diagnose and recover
-
-```bash
-snapshot doctor /path/to/project
-snapshot doctor /path/to/project --repair
-snapshot unlock /path/to/project --force
-```
-
-## Build and Distribution
-
-Build emitted JS CLI:
-
-```bash
+```sh
+bun install
+bun run test
+bunx tsc --noEmit
 bun run build
 ```
 
-Output:
-
-- `dist/cli.js`
-
-`package.json` maps:
-
-- `bin.snapshot` -> `dist/cli.js`
-
-## For Contributors
-
-Run tests:
-
-```bash
-bun run test
-```
-
-Typecheck:
-
-```bash
-bunx tsc --noEmit
-```
-
-Specs live in `spec/`.
-
-## Troubleshooting
-
-- `ERR_BACKEND_UNAVAILABLE`
-  - Requested backend is unavailable under current host/policy.
-  - Use `snapshot backends` and adjust backend/fallback settings.
-
-- `ERR_LOCK_HELD`
-  - Merge lock is present.
-  - If stale and safe to remove, run `snapshot unlock ... --force`.
-
-- `ERR_REVIEW_TTY_REQUIRED`
-  - Interactive review requires TTY.
-  - Use `--readonly` or `--approve-all` in automation.
-
-- merge applies but no merge commit created
-  - Check `merge.autoCommit`, and command flags `--commit`/`--no-commit`.
-  - A single `--no-commit` merge remains a manual Git merge; commit it before using Snapshot revert.
+Found a bug or have an idea? Open an issue or send a pull request.

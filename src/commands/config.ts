@@ -1,7 +1,7 @@
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
 import { MetadataStore } from "../infra/metadata/metadata-store.js";
-import { resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { projectPathFromContext, toJsonResponse } from "./utils.js";
 
 const store = new MetadataStore();
 
@@ -29,7 +29,7 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
   const sub = context.positionals[0] ?? "get";
 
   if (sub === "get") {
-    const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[1]);
+    const projectPath = projectPathFromContext(context.cwd, context.flags, context.positionals[1]);
     const config = store.loadConfig(projectPath);
     if (context.useJson) {
       return toJsonResponse(true, "config", { projectPath, config });
@@ -42,7 +42,7 @@ export async function runConfig(context: CommandContext): Promise<CommandResult>
   if (sub === "set") {
     const key = context.positionals[1];
     const value = context.positionals[2];
-    const projectPath = resolveProjectPathFromContext(context.cwd, context.positionals[3]);
+    const projectPath = projectPathFromContext(context.cwd, context.flags, context.positionals[3]);
     if (!key || value === undefined) {
       throw new SnapshotError("ERR_USAGE", "config set requires: <key> <value> [project-path]");
     }

@@ -1,10 +1,10 @@
 import type { CommandContext, CommandResult } from "./types.js";
-import { assertPositional, resolveProjectPathFromContext, toJsonResponse } from "./utils.js";
+import { assertPositional, projectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runCleanup(context: CommandContext): Promise<CommandResult> {
   const allArchived = context.flags["all-archived"] === true;
   const workspaceRef = allArchived ? undefined : assertPositional(context.positionals, 0, "workspace-ref");
-  const projectPath = allArchived ? resolveProjectPathFromContext(context.cwd, context.positionals[0]) : undefined;
+  const projectPath = allArchived ? projectPathFromContext(context.cwd, context.flags, context.positionals[0]) : undefined;
 
   const result = context.workspaceService.cleanup({
     workspaceRef,

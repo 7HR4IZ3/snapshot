@@ -1,20 +1,26 @@
 import type { CommandContext, CommandResult } from "./types.js";
 import { SnapshotError } from "../core/errors.js";
 import { resolve } from "node:path";
-import { isSpawnedWorkspacePath, toJsonResponse } from "./utils.js";
+import { isSpawnedWorkspacePath, projectPathFromContext, toJsonResponse } from "./utils.js";
 
 export async function runInit(context: CommandContext): Promise<CommandResult> {
-  const explicit = context.positionals[0];
-  const projectPath = explicit ? resolve(explicit) : resolve(context.cwd);
+  const legacyExplicit = context.positionals[0];
+  const projectPath = projectPathFromContext(context.cwd, context.flags, legacyExplicit);
+  const hasExplicitProject = typeof context.flags.project === "string" || Boolean(legacyExplicit);
+  const rawExplicitProject = typeof context.flags.project === "string"
+    ? resolve(context.cwd, context.flags.project)
+    : legacyExplicit
+      ? resolve(context.cwd, legacyExplicit)
+      : undefined;
 
-  if (!explicit && isSpawnedWorkspacePath(context.cwd)) {
+  if (!hasExplicitProject && isSpawnedWorkspacePath(context.cwd)) {
     throw new SnapshotError(
       "ERR_USAGE",
       "cannot initialize from a spawned workspace directory; run init from the canonical project",
     );
   }
 
-  if (explicit && isSpawnedWorkspacePath(resolve(explicit))) {
+  if (rawExplicitProject && isSpawnedWorkspacePath(rawExplicitProject)) {
     throw new SnapshotError(
       "ERR_USAGE",
       "cannot initialize a spawned workspace directory; use the canonical project path",
